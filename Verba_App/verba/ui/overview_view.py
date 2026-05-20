@@ -131,12 +131,12 @@ class OverviewView:
 
         self.text.tag_configure(
             "current_position",
-            background=self.app.sidebar_select,
-            foreground=self.app.text_color
+            background="#fff59d",
+            foreground="black"
         )
         self.text.tag_configure(
             "current_line",
-            background=self.app.sidebar_bg
+            background=getattr(self.app, "panel_color", self.app.bg_color)
         )
 
         self.text.insert("1.0", self.current_chapter_text)
@@ -246,7 +246,11 @@ class OverviewView:
         if not self.text or not self.app.reader.has_text():
             return
 
-        visible_before = self.app.reader.raw_index_to_visible_word_number(self.app.reader.get_index())
+        raw_highlight_index = self.app.reader.get_index()
+        if hasattr(self.app, "get_reader_display_start_index"):
+            raw_highlight_index = self.app.get_reader_display_start_index()
+
+        visible_before = self.app.reader.raw_index_to_visible_word_number(raw_highlight_index)
         start, end = self._word_index_to_text_indexes(visible_before)
         if not start or not end:
             self.text.see("1.0")

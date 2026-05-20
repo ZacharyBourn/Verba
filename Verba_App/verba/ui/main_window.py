@@ -1239,6 +1239,53 @@ class MainWindow:
 
         messagebox.showinfo("Saved", f"Saved to vocab:\n{word}")
 
+
+    def get_reader_display_start_index(self) -> int:
+        """Return the raw reader index that best represents the text currently on screen.
+
+        Reader.index points to the *next* word to read after a chunk is displayed.
+        For overview highlighting, users expect the highlight to mark the chunk they
+        are currently seeing, not the next unread word. This method walks backward
+        from the next unread index by the number of visible words currently shown.
+        """
+        if not self.reader.has_text():
+            return 0
+
+        current_index = self.reader.get_index()
+        display_text = (self.current_display_text or "").strip()
+
+        placeholder_messages = {
+            "Jumped from overview. Press Start.",
+            "Finished chapter!",
+            "No text loaded.",
+            "Press Start.",
+        }
+
+        if not display_text or display_text in placeholder_messages:
+            return current_index
+
+        display_words = [
+            word for word in Reader()._tokenize_text(display_text)
+            if word != Reader.PARAGRAPH_BREAK_TOKEN
+        ]
+
+        if not display_words:
+            return current_index
+
+        remaining_visible_words = len(display_words)
+        candidate_index = current_index
+
+        while candidate_index > 0 and remaining_visible_words > 0:
+            candidate_index -= 1
+            try:
+                if self.reader.words[candidate_index] != Reader.PARAGRAPH_BREAK_TOKEN:
+                    remaining_visible_words -= 1
+            except IndexError:
+                break
+
+        return max(0, candidate_index)
+
+
     def jump_to_reader_word_index(self, word_index: int):
         if not self.current_book or not self.reader.has_text():
             return
