@@ -58,6 +58,8 @@ class MainWindow:
         self.start_intro_sequence()
 
         self.root.bind("<Escape>", self.exit_focus_mode)
+        self.root.bind("<space>", self.toggle_play_pause)
+        self.root.bind("<Left>", self.back_five)
 
     def configure_theme(self):
         if self.settings.theme == "dark":
@@ -588,7 +590,7 @@ class MainWindow:
         tk.Button(self.controls_frame, text="Import Book", command=self.import_book_into_library, width=12).grid(row=0, column=0, padx=5, pady=5)
         tk.Button(self.controls_frame, text="Start", command=self.start, width=10).grid(row=0, column=1, padx=5, pady=5)
         tk.Button(self.controls_frame, text="Pause", command=self.pause, width=10).grid(row=0, column=2, padx=5, pady=5)
-        tk.Button(self.controls_frame, text="<< Back 10", command=self.back, width=10).grid(row=0, column=3, padx=5, pady=5)
+        tk.Button(self.controls_frame, text="<< Back 5", command=self.back_five, width=10).grid(row=0, column=3, padx=5, pady=5)
         tk.Button(self.controls_frame, text="Reset", command=self.reset, width=10).grid(row=0, column=4, padx=5, pady=5)
         tk.Button(self.controls_frame, text="Bookmark", command=self.add_bookmark, width=10).grid(row=0, column=5, padx=5, pady=5)
         tk.Button(self.controls_frame, text="Save to Vocab", command=self.add_to_vocab, width=12).grid(row=0, column=6, padx=5, pady=5)
@@ -1098,6 +1100,25 @@ class MainWindow:
         self.progress_label.config(text=f"Progress: {self.reader.get_progress()}%")
         self.save_session_position()
 
+    def toggle_play_pause(self, event=None):
+        if self.running:
+            self.pause()
+        else:
+            self.start()
+
+    def back_five(self, event=None):
+        if not self.reader.has_text():
+            return
+
+        self.running = False
+        self.cancel_scheduled_reader()
+        self._flush_stats_session()
+
+        self.reader.step_back(5)
+        self.set_display_text("Went back 5 words.\nPress Start.")
+        self.progress_label.config(text=f"Progress: {self.reader.get_progress()}%")
+        self.save_session_position()
+
     def next_chapter(self):
         if not self.current_book:
             return
@@ -1273,10 +1294,30 @@ class MainWindow:
 
         tk.Button(
             button_frame,
+            text="Reset Stats",
+            command=lambda: self.reset_stats_from_window(window),
+            width=12
+        ).grid(row=0, column=0, padx=8)
+
+        tk.Button(
+            button_frame,
             text="Close",
             command=window.destroy,
             width=12
-        ).pack()
+        ).grid(row=0, column=1, padx=8)
+
+    def reset_stats_from_window(self, window):
+        confirm = messagebox.askyesno(
+            "Reset Stats",
+            "Are you sure you want to reset all reading stats? This cannot be undone."
+        )
+
+        if not confirm:
+            return
+
+        self.stats_manager.reset()
+        window.destroy()
+        self.show_stats_window()
 
     def show_vocab_window(self):
         entries = self.vocab_manager.all_entries()

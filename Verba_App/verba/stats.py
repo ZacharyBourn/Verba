@@ -11,20 +11,27 @@ class StatsManager:
         self.path = get_data_file_path(STATS_FILE)
         self.stats = self.load()
 
+    def default_stats(self):
+        return {
+            "total_reading_seconds": 0,
+            "total_words_read": 0,
+            "session_count": 0,
+            "books_opened": [],
+            "books_finished": [],
+            "last_read_date": "",
+            "current_streak": 0,
+            "longest_streak": 0,
+        }
+
     def load(self):
         return load_json(
             self.path,
-            default={
-                "total_reading_seconds": 0,
-                "total_words_read": 0,
-                "session_count": 0,
-                "books_opened": [],
-                "books_finished": [],
-                "last_read_date": "",
-                "current_streak": 0,
-                "longest_streak": 0,
-            }
+            default=self.default_stats()
         )
+
+    def reset(self):
+        self.stats = self.default_stats()
+        self.save()
 
     def save(self):
         save_json(self.path, self.stats)
