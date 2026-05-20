@@ -15,6 +15,7 @@ from Verba_App.verba.settings import SettingsManager
 from Verba_App.verba.stats import StatsManager
 from Verba_App.verba.ui.stats_view import StatsView
 from Verba_App.verba.ui.vocab_view import VocabView
+from Verba_App.verba.ui.bookmarks_panel import BookmarksPanel
 
 
 class MainWindow:
@@ -477,38 +478,15 @@ class MainWindow:
 
         tk.Frame(self.sidebar, height=1, bg=self.border_color).pack(fill="x", padx=12, pady=6)
 
-        bookmark_header = tk.Frame(self.sidebar, bg=self.panel_color)
-        bookmark_header.pack(fill="x", padx=14, pady=(6, 4))
-
-        tk.Label(
-            bookmark_header,
-            text="Bookmarks",
-            font=("Helvetica", 11, "bold"),
-            bg=self.panel_color,
-            fg=self.text_color
-        ).pack(side="left")
-
-        tk.Button(
-            bookmark_header,
-            text="Delete",
-            command=self.delete_selected_bookmark,
-            width=8
-        ).pack(side="right")
-
-        self.bookmark_listbox = tk.Listbox(
+        self.bookmarks_panel = BookmarksPanel(
             self.sidebar,
-            height=12,
-            bg=self.panel_color,
-            fg=self.text_color,
-            selectbackground=self.sidebar_select,
-            selectforeground=self.text_color,
-            activestyle="none",
-            relief="flat",
-            highlightthickness=0,
-            borderwidth=0
+            panel_color=self.panel_color,
+            text_color=self.text_color,
+            sidebar_select=self.sidebar_select,
+            on_delete=self.delete_selected_bookmark,
+            on_activate=self.on_bookmark_activate
         )
-        self.bookmark_listbox.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-        self.bookmark_listbox.bind("<Double-Button-1>", self.on_bookmark_activate)
+        self.bookmarks_panel.pack(fill="both", expand=True)
 
     def build_main_area(self):
         self.top_bar = tk.Frame(self.main_area, bg=self.bg_color)
@@ -835,8 +813,8 @@ class MainWindow:
             self.sidebar_title.config(text="No Book Loaded")
             self.sidebar_author.config(text="")
             self.chapter_listbox.delete(0, tk.END)
-            self.bookmark_listbox.delete(0, tk.END)
             self.current_bookmark_entries = []
+            self.bookmarks_panel.clear()
             return
 
         self.sidebar_title.config(text=self.current_book.title)
@@ -852,29 +830,20 @@ class MainWindow:
             self.chapter_listbox.selection_set(self.current_chapter_index)
             self.chapter_listbox.see(self.current_chapter_index)
 
-        self.bookmark_listbox.delete(0, tk.END)
         self.current_bookmark_entries = self.bookmark_manager.get_bookmarks_for_book(self.current_book.book_id)
-
-        for _, bookmark in self.current_bookmark_entries:
-            chapter_name = f"Ch {bookmark.chapter_index + 1}"
-            if 0 <= bookmark.chapter_index < len(self.current_book.chapters):
-                chapter_name = self.current_book.chapters[bookmark.chapter_index].title
-
-            label = bookmark.label.strip() if bookmark.label.strip() else "Bookmark"
-            self.bookmark_listbox.insert(tk.END, f"{chapter_name} | {label}")
+        self.bookmarks_panel.refresh(self.current_book, self.current_bookmark_entries)
 
     def delete_selected_bookmark(self):
         if not self.current_book:
             messagebox.showinfo("No Book", "Load a book first.")
             return
 
-        selection = self.bookmark_listbox.curselection()
-        if not selection:
+        selected_entry = self.bookmarks_panel.get_selected_entry()
+        if not selected_entry:
             messagebox.showinfo("No Selection", "Select a bookmark to delete.")
             return
 
-        selected_index = selection[0]
-        global_index, bookmark = self.current_bookmark_entries[selected_index]
+        global_index, bookmark = selected_entry
 
         label = bookmark.label.strip() if bookmark.label.strip() else "this bookmark"
         confirm = messagebox.askyesno("Delete Bookmark", f"Delete {label}?")
@@ -896,15 +865,15 @@ class MainWindow:
         if index != self.current_chapter_index:
             self.jump_to_chapter(index)
 
-    def on_bookmark_activate(self, event):
+    def on_bookmark_activate(self, event=None):
         if not self.current_book:
             return
 
-        selection = self.bookmark_listbox.curselection()
-        if not selection or not self.current_bookmark_entries:
+        selected_entry = self.bookmarks_panel.get_selected_entry()
+        if not selected_entry:
             return
 
-        _, bookmark = self.current_bookmark_entries[selection[0]]
+        _, bookmark = selected_entry
 
         self.set_current_book(self.current_book, bookmark.chapter_index)
         self.reader.set_index(bookmark.word_index)
