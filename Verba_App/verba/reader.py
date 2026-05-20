@@ -282,6 +282,36 @@ class Reader:
     def reset(self):
         self.index = 0
 
+
+    def visible_word_number_to_raw_index(self, visible_word_number: int) -> int:
+        """Return the raw token index for a visible-word position.
+
+        The reader internally stores paragraph break tokens alongside real words.
+        Overview-style views usually count only visible words, so this helper
+        converts a visible word number back into the reader's internal index.
+        """
+        target = max(0, int(visible_word_number))
+        visible_seen = 0
+
+        for raw_index, word in enumerate(self.words):
+            if word == self.PARAGRAPH_BREAK_TOKEN:
+                continue
+
+            if visible_seen == target:
+                return raw_index
+
+            visible_seen += 1
+
+        return len(self.words)
+
+    def raw_index_to_visible_word_number(self, raw_index: int) -> int:
+        """Return how many visible words appear before a raw token index."""
+        safe_index = max(0, min(int(raw_index), len(self.words)))
+        return len([
+            word for word in self.words[:safe_index]
+            if word != self.PARAGRAPH_BREAK_TOKEN
+        ])
+
     def set_index(self, index: int):
         self.index = max(0, min(index, len(self.words)))
 
