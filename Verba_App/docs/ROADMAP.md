@@ -114,35 +114,23 @@ verba/vocab.py
 
 ## Stage 3: Appearance and Themes
 
-Add more themes.
+Status: Started for V1.
 
-Possible themes:
+Implemented themes:
 
 - Dark
 - Light
 - Sepia
+- Forest
 - Gray
-- Dull green
-- High contrast
 
-Recommended approach:
-
-- Store theme in settings
-- Centralize color palettes
-- Avoid scattered color values
-
-Likely files:
-
-```text
-verba/settings.py
-verba/ui/main_window.py
-```
-
-Possible future file:
+Themes are centralized in:
 
 ```text
 verba/ui/themes.py
 ```
+
+The current V1 theme selector saves the selected theme and applies it after restarting Verba. Future polish could make theme switching fully live without a restart.
 
 ## Stage 4: Vocab Expansion
 
