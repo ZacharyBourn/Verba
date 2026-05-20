@@ -8,7 +8,7 @@ class UserSettings:
     theme: str = "dark"
     font_size: int = 34
     font_family: str = "Helvetica"
-    default_wpm: int = 300
+    default_wpm: int = 240
     default_chunk_size: int = 1
     punctuation_slowdown: bool = True
     window_width: int = 1000
