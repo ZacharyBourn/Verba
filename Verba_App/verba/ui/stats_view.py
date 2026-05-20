@@ -3,53 +3,70 @@ from tkinter import messagebox
 
 
 class StatsView:
-    """Toplevel window that displays and resets reading stats.
+    """Embedded reading-stats view.
 
-    This keeps stats UI code out of MainWindow while preserving the
-    existing popup-window behavior. MainWindow still owns the managers,
-    colors, and root window; this class only owns the stats view layout.
+    This view renders inside MainWindow's main container. It does not create a
+    popup/Toplevel window.
     """
 
-    def __init__(self, app):
+    def __init__(self, app, parent):
         self.app = app
-        self.window = None
+        self.parent = parent
 
-    def show(self):
+    def clear(self):
+        for widget in self.parent.winfo_children():
+            widget.destroy()
+
+    def render(self):
+        self.clear()
         stats = self.app.stats_manager.get_stats_summary()
 
-        self.window = tk.Toplevel(self.app.root)
-        self.window.title("Reading Stats")
-        self.window.geometry("760x800")
-        self.window.configure(bg=self.app.bg_color)
-        self.window.resizable(False, False)
+        header = tk.Frame(self.parent, bg=self.app.bg_color)
+        header.pack(fill="x", padx=30, pady=(24, 12))
+
+        tk.Button(
+            header,
+            text="← Library",
+            command=self.app.show_library_view,
+            width=12
+        ).pack(side="left")
+
+        if self.app.current_book:
+            tk.Button(
+                header,
+                text="Reader",
+                command=self.app.show_reader_view,
+                width=12
+            ).pack(side="left", padx=(8, 0))
 
         tk.Label(
-            self.window,
+            header,
             text="Reading Stats",
-            font=("Helvetica", 16, "bold"),
+            font=("Helvetica", 24, "bold"),
             bg=self.app.bg_color,
             fg=self.app.text_color
-        ).pack(pady=(14, 10))
+        ).pack(side="left", padx=24)
 
         card = tk.Frame(
-            self.window,
+            self.parent,
             bg=self.app.panel_color,
             highlightbackground=self.app.border_color,
             highlightthickness=1
         )
-        card.pack(fill="both", expand=True, padx=18, pady=(0, 14))
+        card.pack(fill="both", expand=True, padx=30, pady=(0, 24))
 
-        header = tk.Label(
+        tk.Label(
             card,
             text="Your Verba Progress",
-            font=("Helvetica", 13, "bold"),
+            font=("Helvetica", 14, "bold"),
             bg=self.app.panel_color,
             fg=self.app.text_color
-        )
-        header.pack(anchor="w", padx=16, pady=(16, 10))
+        ).pack(anchor="w", padx=18, pady=(18, 12))
 
         stats_grid = tk.Frame(card, bg=self.app.panel_color)
-        stats_grid.pack(fill="x", padx=16, pady=(0, 8))
+        stats_grid.pack(fill="x", padx=18, pady=(0, 8))
+        stats_grid.grid_columnconfigure(0, weight=1)
+        stats_grid.grid_columnconfigure(1, weight=1)
 
         stat_items = [
             ("Total Reading Time", f"{stats['hours']}h {stats['minutes']}m"),
@@ -73,8 +90,6 @@ class StatsView:
             )
             item_frame.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
 
-            stats_grid.grid_columnconfigure(col, weight=1)
-
             tk.Label(
                 item_frame,
                 text=label_text,
@@ -87,7 +102,7 @@ class StatsView:
             tk.Label(
                 item_frame,
                 text=value_text,
-                font=("Helvetica", 18, "bold"),
+                font=("Helvetica", 20, "bold"),
                 bg=self.app.library_card,
                 fg=self.app.text_color,
                 anchor="w"
@@ -100,24 +115,17 @@ class StatsView:
             bg=self.app.panel_color,
             fg=self.app.subtle_text
         )
-        footer.pack(anchor="w", padx=16, pady=(8, 12))
+        footer.pack(anchor="w", padx=18, pady=(8, 12))
 
-        button_frame = tk.Frame(self.window, bg=self.app.bg_color)
-        button_frame.pack(pady=(0, 14))
+        button_frame = tk.Frame(card, bg=self.app.panel_color)
+        button_frame.pack(anchor="w", padx=18, pady=(0, 18))
 
         tk.Button(
             button_frame,
             text="Reset Stats",
             command=self.reset_stats,
-            width=12
-        ).grid(row=0, column=0, padx=8)
-
-        tk.Button(
-            button_frame,
-            text="Close",
-            command=self.window.destroy,
-            width=12
-        ).grid(row=0, column=1, padx=8)
+            width=14
+        ).pack(side="left")
 
     def reset_stats(self):
         confirm = messagebox.askyesno(
@@ -129,8 +137,4 @@ class StatsView:
             return
 
         self.app.stats_manager.reset()
-
-        if self.window:
-            self.window.destroy()
-
-        self.show()
+        self.render()

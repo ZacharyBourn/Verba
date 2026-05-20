@@ -93,6 +93,11 @@ class MainWindow:
 
         self.library_view = tk.Frame(self.container, bg=self.bg_color)
         self.reader_view = tk.Frame(self.container, bg=self.bg_color)
+        self.stats_view_frame = tk.Frame(self.container, bg=self.bg_color)
+        self.vocab_view_frame = tk.Frame(self.container, bg=self.bg_color)
+
+        self.stats_view = StatsView(self, self.stats_view_frame)
+        self.vocab_view = VocabView(self, self.vocab_view_frame)
 
         self.build_library_view()
         self.build_reader_view()
@@ -264,8 +269,8 @@ class MainWindow:
         tk.Button(top_buttons, text="Open Selected Book", command=self.open_selected_library_book, width=18).grid(row=0, column=1, padx=6)
         tk.Button(top_buttons, text="Remove Selected Book", command=self.remove_selected_library_book, width=18).grid(row=0, column=2, padx=6)
         tk.Button(top_buttons, text="Open Pasted Text", command=self.open_pasted_text_to_reader, width=18).grid(row=0, column=3, padx=6)
-        tk.Button(top_buttons, text="View Vocab", command=self.show_vocab_window, width=18).grid(row=0, column=4, padx=6)
-        tk.Button(top_buttons, text="View Stats", command=self.show_stats_window, width=18).grid(row=0, column=5, padx=6)
+        tk.Button(top_buttons, text="Vocab", command=self.show_vocab_view, width=18).grid(row=0, column=4, padx=6)
+        tk.Button(top_buttons, text="Stats", command=self.show_stats_view, width=18).grid(row=0, column=5, padx=6)
 
         content = tk.Frame(self.library_view, bg=self.bg_color)
         content.pack(fill="both", expand=True, padx=30, pady=(5, 20))
@@ -515,6 +520,12 @@ class MainWindow:
         self.focus_button = tk.Button(self.top_bar, text="Focus Mode", command=self.toggle_focus_mode, width=12)
         self.focus_button.pack(side="right")
 
+        self.reader_stats_button = tk.Button(self.top_bar, text="Stats", command=self.show_stats_view, width=10)
+        self.reader_stats_button.pack(side="right", padx=(0, 8))
+
+        self.reader_vocab_button = tk.Button(self.top_bar, text="Vocab", command=self.show_vocab_view, width=10)
+        self.reader_vocab_button.pack(side="right", padx=(0, 8))
+
         self.title_label = tk.Label(
             self.main_area,
             text="Verba",
@@ -652,6 +663,12 @@ class MainWindow:
         self.font_scale.set(self.settings.font_size)
         self.font_scale.grid(row=0, column=2, padx=15)
 
+    def hide_content_views(self):
+        self.library_view.pack_forget()
+        self.reader_view.pack_forget()
+        self.stats_view_frame.pack_forget()
+        self.vocab_view_frame.pack_forget()
+
     def show_library_view(self):
         if self.focus_mode:
             self.toggle_focus_mode()
@@ -660,13 +677,37 @@ class MainWindow:
         self.cancel_scheduled_reader()
         self._flush_stats_session()
 
-        self.reader_view.pack_forget()
+        self.hide_content_views()
         self.library_view.pack(fill="both", expand=True)
         self.refresh_library_view()
 
     def show_reader_view(self):
-        self.library_view.pack_forget()
+        self.hide_content_views()
         self.reader_view.pack(fill="both", expand=True)
+
+    def show_stats_view(self):
+        if self.focus_mode:
+            self.toggle_focus_mode()
+
+        self.running = False
+        self.cancel_scheduled_reader()
+        self._flush_stats_session()
+
+        self.hide_content_views()
+        self.stats_view.render()
+        self.stats_view_frame.pack(fill="both", expand=True)
+
+    def show_vocab_view(self):
+        if self.focus_mode:
+            self.toggle_focus_mode()
+
+        self.running = False
+        self.cancel_scheduled_reader()
+        self._flush_stats_session()
+
+        self.hide_content_views()
+        self.vocab_view.render()
+        self.vocab_view_frame.pack(fill="both", expand=True)
 
     def refresh_library_view(self):
         self.library_manager.reload()
@@ -1204,10 +1245,10 @@ class MainWindow:
         messagebox.showinfo("Saved", f"Saved to vocab:\n{word}")
 
     def show_stats_window(self):
-        StatsView(self).show()
+        self.show_stats_view()
 
     def show_vocab_window(self):
-        VocabView(self).show()
+        self.show_vocab_view()
 
     def save_session_position(self):
         if not self.current_book:
