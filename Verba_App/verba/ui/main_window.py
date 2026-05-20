@@ -669,6 +669,13 @@ class MainWindow:
     def show_reader_view(self):
         self.hide_content_views()
         self.reader_view.pack(fill="both", expand=True)
+        self.root.after(50, self.focus_reader_view)
+
+    def focus_reader_view(self):
+        try:
+            self.display_text.focus_set()
+        except Exception:
+            self.root.focus_set()
 
     def show_stats_view(self):
         if self.focus_mode:
@@ -1246,6 +1253,7 @@ class MainWindow:
         self.save_session_position()
         self.refresh_sidebar()
         self.show_reader_view()
+        self.root.after(75, self.focus_reader_view)
 
     def show_stats_window(self):
         self.show_stats_view()

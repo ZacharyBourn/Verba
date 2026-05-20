@@ -1,3 +1,4 @@
+import re
 import tkinter as tk
 from tkinter import messagebox
 
@@ -19,10 +20,16 @@ class OverviewView:
         self.text = None
         self.zoom_size = max(14, min(28, int(self.app.settings.font_size * 0.55)))
         self.current_chapter_text = ""
+        self.word_spans = []
 
     def clear(self):
         for widget in self.parent.winfo_children():
             widget.destroy()
+
+        # Reset geometry configuration in case this view is rebuilt.
+        for row in range(3):
+            self.parent.grid_rowconfigure(row, weight=0)
+        self.parent.grid_columnconfigure(0, weight=0)
 
     def render(self):
         self.clear()
@@ -33,26 +40,33 @@ class OverviewView:
 
         chapter = self.app.current_book.chapters[self.app.current_chapter_index]
         self.current_chapter_text = chapter.text or ""
+        self.word_spans = self._build_word_spans(self.current_chapter_text)
+
+        self.parent.grid_rowconfigure(0, weight=0)
+        self.parent.grid_rowconfigure(1, weight=1)
+        self.parent.grid_rowconfigure(2, weight=0)
+        self.parent.grid_columnconfigure(0, weight=1)
 
         header = tk.Frame(self.parent, bg=self.app.bg_color)
-        header.pack(fill="x", padx=24, pady=(18, 8))
+        header.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 8))
+        header.grid_columnconfigure(2, weight=1)
 
         tk.Button(
             header,
             text="← Reader",
             command=self.app.show_reader_view,
             width=12
-        ).pack(side="left")
+        ).grid(row=0, column=0, sticky="w")
 
         tk.Button(
             header,
             text="Library",
             command=self.app.show_library_view,
             width=12
-        ).pack(side="left", padx=(8, 0))
+        ).grid(row=0, column=1, sticky="w", padx=(8, 0))
 
         title_frame = tk.Frame(header, bg=self.app.bg_color)
-        title_frame.pack(side="left", padx=24, fill="x", expand=True)
+        title_frame.grid(row=0, column=2, sticky="ew", padx=24)
 
         tk.Label(
             title_frame,
@@ -73,7 +87,7 @@ class OverviewView:
         ).pack(anchor="w")
 
         zoom_frame = tk.Frame(header, bg=self.app.bg_color)
-        zoom_frame.pack(side="right")
+        zoom_frame.grid(row=0, column=3, sticky="e")
 
         tk.Button(zoom_frame, text="A−", command=self.zoom_out, width=5).grid(row=0, column=0, padx=3)
         tk.Button(zoom_frame, text="A+", command=self.zoom_in, width=5).grid(row=0, column=1, padx=3)
@@ -85,13 +99,17 @@ class OverviewView:
             highlightbackground=self.app.border_color,
             highlightthickness=1
         )
-        card.pack(fill="both", expand=True, padx=24, pady=(0, 12))
+        card.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 12))
+        card.grid_rowconfigure(0, weight=1)
+        card.grid_columnconfigure(0, weight=1)
 
         text_frame = tk.Frame(card, bg=self.app.panel_color)
-        text_frame.pack(fill="both", expand=True, padx=14, pady=14)
+        text_frame.grid(row=0, column=0, sticky="nsew", padx=14, pady=14)
+        text_frame.grid_rowconfigure(0, weight=1)
+        text_frame.grid_columnconfigure(0, weight=1)
 
         scrollbar = tk.Scrollbar(text_frame)
-        scrollbar.pack(side="right", fill="y")
+        scrollbar.grid(row=0, column=1, sticky="ns")
 
         self.text = tk.Text(
             text_frame,
@@ -108,58 +126,73 @@ class OverviewView:
             font=(self.app.settings.font_family, self.zoom_size),
             yscrollcommand=scrollbar.set
         )
-        self.text.pack(side="left", fill="both", expand=True)
+        self.text.grid(row=0, column=0, sticky="nsew")
         scrollbar.config(command=self.text.yview)
+
+        self.text.tag_configure(
+            "current_position",
+            background=self.app.sidebar_select,
+            foreground=self.app.text_color
+        )
+        self.text.tag_configure(
+            "current_line",
+            background=self.app.sidebar_bg
+        )
 
         self.text.insert("1.0", self.current_chapter_text)
         self.text.bind("<Key>", lambda event: "break")
         self.text.bind("<Double-Button-1>", self.jump_to_cursor)
         self.text.bind("<ButtonRelease-1>", self._move_insert_to_click)
 
-        self._scroll_near_reader_position()
+        self._highlight_and_scroll_to_reader_position()
 
         footer = tk.Frame(self.parent, bg=self.app.bg_color)
-        footer.pack(fill="x", padx=24, pady=(0, 16))
+        footer.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 16))
+        footer.grid_columnconfigure(2, weight=1)
 
         tk.Button(
             footer,
             text="Previous Chapter",
             command=self.previous_chapter,
             width=16
-        ).pack(side="left")
+        ).grid(row=0, column=0, sticky="w")
 
         tk.Button(
             footer,
             text="Next Chapter",
             command=self.next_chapter,
             width=16
-        ).pack(side="left", padx=(8, 0))
+        ).grid(row=0, column=1, sticky="w", padx=(8, 0))
 
-        tk.Button(
+        tk.Label(
             footer,
-            text="Jump Here",
-            command=self.jump_to_cursor,
-            width=14
-        ).pack(side="right")
+            text="Highlighted word = current reader position. Click elsewhere, then Jump Here.",
+            font=("Helvetica", 10),
+            bg=self.app.bg_color,
+            fg=self.app.subtle_text
+        ).grid(row=0, column=2, sticky="e", padx=(14, 14))
 
         tk.Button(
             footer,
             text="Save Selected Word",
             command=self.save_selected_word,
             width=18
-        ).pack(side="right", padx=(0, 8))
+        ).grid(row=0, column=3, sticky="e", padx=(0, 8))
 
-        tk.Label(
+        tk.Button(
             footer,
-            text="Tip: click in the chapter, then use Jump Here. Double-click also jumps.",
-            font=("Helvetica", 10),
-            bg=self.app.bg_color,
-            fg=self.app.subtle_text
-        ).pack(side="right", padx=(0, 14))
+            text="Jump Here",
+            command=self.jump_to_cursor,
+            width=14
+        ).grid(row=0, column=4, sticky="e")
 
     def _render_empty_state(self):
+        self.parent.grid_rowconfigure(0, weight=0)
+        self.parent.grid_rowconfigure(1, weight=1)
+        self.parent.grid_columnconfigure(0, weight=1)
+
         header = tk.Frame(self.parent, bg=self.app.bg_color)
-        header.pack(fill="x", padx=30, pady=(24, 12))
+        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(24, 12))
 
         tk.Button(
             header,
@@ -168,8 +201,11 @@ class OverviewView:
             width=12
         ).pack(side="left")
 
+        body = tk.Frame(self.parent, bg=self.app.bg_color)
+        body.grid(row=1, column=0, sticky="nsew")
+
         tk.Label(
-            self.parent,
+            body,
             text="No book loaded.",
             font=("Helvetica", 20, "bold"),
             bg=self.app.bg_color,
@@ -177,12 +213,26 @@ class OverviewView:
         ).pack(pady=(120, 8))
 
         tk.Label(
-            self.parent,
+            body,
             text="Open a book first, then return to Overview.",
             font=("Helvetica", 11),
             bg=self.app.bg_color,
             fg=self.app.subtle_text
         ).pack()
+
+    def _build_word_spans(self, text):
+        """Return character spans for visible words in the original chapter text."""
+        return [(match.start(), match.end()) for match in re.finditer(r"\S+", text)]
+
+    def _word_index_to_text_indexes(self, visible_word_number):
+        if not self.text or not self.word_spans:
+            return None, None
+
+        safe_index = max(0, min(int(visible_word_number), len(self.word_spans) - 1))
+        start_offset, end_offset = self.word_spans[safe_index]
+        start = self.text.index(f"1.0 + {start_offset} chars")
+        end = self.text.index(f"1.0 + {end_offset} chars")
+        return start, end
 
     def _move_insert_to_click(self, event=None):
         if not self.text or event is None:
@@ -192,26 +242,49 @@ class OverviewView:
         except Exception:
             pass
 
-    def _scroll_near_reader_position(self):
+    def _highlight_and_scroll_to_reader_position(self):
         if not self.text or not self.app.reader.has_text():
             return
 
         visible_before = self.app.reader.raw_index_to_visible_word_number(self.app.reader.get_index())
-        if visible_before <= 0:
+        start, end = self._word_index_to_text_indexes(visible_before)
+        if not start or not end:
             self.text.see("1.0")
             return
 
-        # Tk text indexes are line/character based, so the safest lightweight
-        # approach is proportional scrolling based on visible word progress.
-        total_visible = len([
-            word for word in self.app.reader.words
-            if word != self.app.reader.PARAGRAPH_BREAK_TOKEN
-        ])
-        if total_visible <= 0:
-            return
+        self.text.tag_remove("current_position", "1.0", tk.END)
+        self.text.tag_remove("current_line", "1.0", tk.END)
+        self.text.tag_add("current_position", start, end)
 
-        fraction = max(0.0, min(1.0, visible_before / total_visible))
-        self.text.yview_moveto(fraction)
+        try:
+            line_start = self.text.index(f"{start} linestart")
+            line_end = self.text.index(f"{start} lineend")
+            self.text.tag_add("current_line", line_start, line_end)
+            self.text.tag_lower("current_line", "current_position")
+        except Exception:
+            pass
+
+        self.text.mark_set("insert", start)
+        self.text.see(start)
+
+        # Nudge the highlighted word a bit down from the very top when possible.
+        self.text.after(50, lambda: self._center_current_position(start))
+
+    def _center_current_position(self, start_index):
+        if not self.text:
+            return
+        try:
+            bbox = self.text.bbox(start_index)
+            if bbox is None:
+                self.text.see(start_index)
+                return
+
+            _, y, _, _ = bbox
+            height = max(1, self.text.winfo_height())
+            if y < height * 0.25:
+                self.text.yview_scroll(-6, "units")
+        except Exception:
+            pass
 
     def _visible_words_before_index(self, text_index):
         if not self.text:
@@ -286,7 +359,7 @@ class OverviewView:
             return ""
 
     def zoom_in(self):
-        self.zoom_size = min(32, self.zoom_size + 2)
+        self.zoom_size = min(36, self.zoom_size + 2)
         self._apply_zoom()
 
     def zoom_out(self):
@@ -300,6 +373,7 @@ class OverviewView:
     def _apply_zoom(self):
         if self.text:
             self.text.config(font=(self.app.settings.font_family, self.zoom_size))
+            self._highlight_and_scroll_to_reader_position()
 
     def previous_chapter(self):
         before = self.app.current_chapter_index
