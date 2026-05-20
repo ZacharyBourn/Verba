@@ -134,6 +134,7 @@ class OverviewView:
             background="#fff59d",
             foreground="black"
         )
+
         self.text.tag_configure(
             "current_line",
             background=getattr(self.app, "panel_color", self.app.bg_color)
