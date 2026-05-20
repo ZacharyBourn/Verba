@@ -3,54 +3,97 @@ from tkinter import messagebox
 
 
 class VocabView:
-    """Toplevel window that displays and manages saved vocabulary.
+    """Embedded vocabulary view.
 
-    This keeps vocab-list UI code out of MainWindow while preserving the
-    existing popup-window behavior. MainWindow still owns the vocab manager,
-    colors, and root window; this class only owns the vocab view layout.
+    This view renders inside MainWindow's main container. It does not create a
+    popup/Toplevel window.
     """
 
-    def __init__(self, app):
+    def __init__(self, app, parent):
         self.app = app
-        self.window = None
+        self.parent = parent
         self.listbox = None
+        self.details_label = None
         self.entries = []
 
-    def show(self):
+    def clear(self):
+        for widget in self.parent.winfo_children():
+            widget.destroy()
+
+    def render(self):
+        self.clear()
         self.entries = self.app.vocab_manager.all_entries()
 
-        if not self.entries:
-            messagebox.showinfo("Vocab List", "Your vocab list is empty.")
-            return
+        header = tk.Frame(self.parent, bg=self.app.bg_color)
+        header.pack(fill="x", padx=30, pady=(24, 12))
 
-        self.window = tk.Toplevel(self.app.root)
-        self.window.title("Vocab List")
-        self.window.geometry("760x420")
-        self.window.configure(bg=self.app.bg_color)
+        tk.Button(
+            header,
+            text="← Library",
+            command=self.app.show_library_view,
+            width=12
+        ).pack(side="left")
+
+        if self.app.current_book:
+            tk.Button(
+                header,
+                text="Reader",
+                command=self.app.show_reader_view,
+                width=12
+            ).pack(side="left", padx=(8, 0))
 
         tk.Label(
-            self.window,
+            header,
             text="Saved Vocabulary",
-            font=("Helvetica", 16, "bold"),
+            font=("Helvetica", 24, "bold"),
             bg=self.app.bg_color,
             fg=self.app.text_color
-        ).pack(pady=(14, 10))
+        ).pack(side="left", padx=24)
 
-        list_frame = tk.Frame(self.window, bg=self.app.bg_color)
-        list_frame.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+        card = tk.Frame(
+            self.parent,
+            bg=self.app.panel_color,
+            highlightbackground=self.app.border_color,
+            highlightthickness=1
+        )
+        card.pack(fill="both", expand=True, padx=30, pady=(0, 24))
+
+        if not self.entries:
+            tk.Label(
+                card,
+                text="Your vocab list is empty.",
+                font=("Helvetica", 15, "bold"),
+                bg=self.app.panel_color,
+                fg=self.app.text_color
+            ).pack(pady=(80, 8))
+
+            tk.Label(
+                card,
+                text="Words you save from the reader will appear here.",
+                font=("Helvetica", 11),
+                bg=self.app.panel_color,
+                fg=self.app.subtle_text
+            ).pack()
+            return
+
+        list_frame = tk.Frame(card, bg=self.app.panel_color)
+        list_frame.pack(fill="both", expand=True, padx=18, pady=(18, 10))
 
         scrollbar = tk.Scrollbar(list_frame)
         scrollbar.pack(side="right", fill="y")
 
         self.listbox = tk.Listbox(
             list_frame,
-            bg=self.app.panel_color,
+            bg=self.app.library_card,
             fg=self.app.text_color,
             selectbackground=self.app.sidebar_select,
             selectforeground=self.app.text_color,
             activestyle="none",
             yscrollcommand=scrollbar.set,
-            font=("Helvetica", 11)
+            font=("Helvetica", 11),
+            relief="flat",
+            highlightthickness=0,
+            borderwidth=0
         )
         self.listbox.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.listbox.yview)
@@ -58,45 +101,37 @@ class VocabView:
         for entry in self.entries:
             self.listbox.insert(tk.END, self.format_entry(entry))
 
-        details_label = tk.Label(
-            self.window,
+        self.details_label = tk.Label(
+            card,
             text="Select an entry to see full context.",
             justify="left",
             anchor="w",
-            wraplength=720,
-            bg=self.app.bg_color,
+            wraplength=980,
+            bg=self.app.panel_color,
             fg=self.app.subtle_text,
             font=("Helvetica", 10)
         )
-        details_label.pack(fill="x", padx=14, pady=(0, 10))
+        self.details_label.pack(fill="x", padx=18, pady=(0, 12))
 
-        self.listbox.bind(
-            "<<ListboxSelect>>",
-            lambda event=None: self.show_selected_details(details_label)
-        )
+        self.listbox.bind("<<ListboxSelect>>", self.show_selected_details)
 
-        button_frame = tk.Frame(self.window, bg=self.app.bg_color)
-        button_frame.pack(pady=(0, 14))
+        button_frame = tk.Frame(card, bg=self.app.panel_color)
+        button_frame.pack(anchor="w", padx=18, pady=(0, 18))
 
         tk.Button(
             button_frame,
             text="Delete Selected",
-            command=self.delete_selected_entry
-        ).grid(row=0, column=0, padx=8)
-
-        tk.Button(
-            button_frame,
-            text="Close",
-            command=self.window.destroy
-        ).grid(row=0, column=1, padx=8)
+            command=self.delete_selected_entry,
+            width=16
+        ).pack(side="left")
 
     def format_entry(self, entry):
         word = entry.get("word", "").strip() or "(blank)"
         chapter_title = entry.get("chapter_title", "").strip()
         context = entry.get("context", "").strip()
 
-        preview = context[:60].strip()
-        if len(context) > 60:
+        preview = context[:80].strip()
+        if len(context) > 80:
             preview += "..."
 
         if chapter_title:
@@ -104,7 +139,10 @@ class VocabView:
 
         return f"{word}  |  {preview}"
 
-    def show_selected_details(self, details_label):
+    def show_selected_details(self, event=None):
+        if not self.listbox or not self.details_label:
+            return
+
         selection = self.listbox.curselection()
         if not selection:
             return
@@ -120,9 +158,12 @@ class VocabView:
         if context:
             detail_text += f"\nContext: {context}"
 
-        details_label.config(text=detail_text)
+        self.details_label.config(text=detail_text)
 
     def delete_selected_entry(self):
+        if not self.listbox:
+            return
+
         selection = self.listbox.curselection()
         if not selection:
             messagebox.showinfo("No Selection", "Select a vocab entry to delete.")
@@ -140,8 +181,4 @@ class VocabView:
             return
 
         self.app.vocab_manager.remove_entry(index)
-
-        if self.window:
-            self.window.destroy()
-
-        self.show()
+        self.render()
