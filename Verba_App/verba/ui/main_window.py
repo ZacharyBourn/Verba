@@ -16,6 +16,7 @@ from Verba_App.verba.stats import StatsManager
 from Verba_App.verba.ui.stats_view import StatsView
 from Verba_App.verba.ui.vocab_view import VocabView
 from Verba_App.verba.ui.bookmarks_panel import BookmarksPanel
+from Verba_App.verba.ui.overview_view import OverviewView
 
 
 class MainWindow:
@@ -96,9 +97,11 @@ class MainWindow:
         self.reader_view = tk.Frame(self.container, bg=self.bg_color)
         self.stats_view_frame = tk.Frame(self.container, bg=self.bg_color)
         self.vocab_view_frame = tk.Frame(self.container, bg=self.bg_color)
+        self.overview_view_frame = tk.Frame(self.container, bg=self.bg_color)
 
         self.stats_view = StatsView(self, self.stats_view_frame)
         self.vocab_view = VocabView(self, self.vocab_view_frame)
+        self.overview_view = OverviewView(self, self.overview_view_frame)
 
         self.build_library_view()
         self.build_reader_view()
@@ -504,6 +507,9 @@ class MainWindow:
         self.reader_vocab_button = tk.Button(self.top_bar, text="Vocab", command=self.show_vocab_view, width=10)
         self.reader_vocab_button.pack(side="right", padx=(0, 8))
 
+        self.reader_overview_button = tk.Button(self.top_bar, text="Overview", command=self.show_overview_view, width=10)
+        self.reader_overview_button.pack(side="right", padx=(0, 8))
+
         self.title_label = tk.Label(
             self.main_area,
             text="Verba",
@@ -646,6 +652,7 @@ class MainWindow:
         self.reader_view.pack_forget()
         self.stats_view_frame.pack_forget()
         self.vocab_view_frame.pack_forget()
+        self.overview_view_frame.pack_forget()
 
     def show_library_view(self):
         if self.focus_mode:
@@ -686,6 +693,18 @@ class MainWindow:
         self.hide_content_views()
         self.vocab_view.render()
         self.vocab_view_frame.pack(fill="both", expand=True)
+
+    def show_overview_view(self):
+        if self.focus_mode:
+            self.toggle_focus_mode()
+
+        self.running = False
+        self.cancel_scheduled_reader()
+        self._flush_stats_session()
+
+        self.hide_content_views()
+        self.overview_view.render()
+        self.overview_view_frame.pack(fill="both", expand=True)
 
     def refresh_library_view(self):
         self.library_manager.reload()
@@ -1212,6 +1231,21 @@ class MainWindow:
         )
 
         messagebox.showinfo("Saved", f"Saved to vocab:\n{word}")
+
+    def jump_to_reader_word_index(self, word_index: int):
+        if not self.current_book or not self.reader.has_text():
+            return
+
+        self.running = False
+        self.cancel_scheduled_reader()
+        self._flush_stats_session()
+
+        self.reader.set_index(word_index)
+        self.progress_label.config(text=f"Progress: {self.reader.get_progress()}%")
+        self.set_display_text("Jumped from overview. Press Start.")
+        self.save_session_position()
+        self.refresh_sidebar()
+        self.show_reader_view()
 
     def show_stats_window(self):
         self.show_stats_view()
