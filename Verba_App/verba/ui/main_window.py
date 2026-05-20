@@ -44,7 +44,7 @@ class MainWindow:
         self.root.title("Verba")
         self.root.geometry(f"{self.settings.window_width}x{self.settings.window_height}")
         self.root.minsize(1100, 760)
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
 
         self.running = False
         self.focus_mode = False

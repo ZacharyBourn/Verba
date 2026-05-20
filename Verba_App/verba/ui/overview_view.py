@@ -187,6 +187,12 @@ class OverviewView:
             width=14
         ).grid(row=0, column=4, sticky="e")
 
+        self.text.bind("<Up>", self.scroll_up)
+        self.text.bind("<Down>", self.scroll_down)
+        self.text.bind("<Prior>", self.page_up)  # Page Up
+        self.text.bind("<Next>", self.page_down)  # Page Down
+        self.text.focus_set()
+
     def _render_empty_state(self):
         self.parent.grid_rowconfigure(0, weight=0)
         self.parent.grid_rowconfigure(1, weight=1)
@@ -391,3 +397,19 @@ class OverviewView:
         self.app.next_chapter()
         if self.app.current_chapter_index != before:
             self.render()
+
+    def scroll_up(self, event=None):
+        self.text.yview_scroll(-1, "units")
+        return "break"
+
+    def scroll_down(self, event=None):
+        self.text.yview_scroll(1, "units")
+        return "break"
+
+    def page_up(self, event=None):
+        self.text.yview_scroll(-1, "pages")
+        return "break"
+
+    def page_down(self, event=None):
+        self.text.yview_scroll(1, "pages")
+        return "break"
