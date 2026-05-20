@@ -17,6 +17,7 @@ from Verba_App.verba.ui.stats_view import StatsView
 from Verba_App.verba.ui.vocab_view import VocabView
 from Verba_App.verba.ui.bookmarks_panel import BookmarksPanel
 from Verba_App.verba.ui.overview_view import OverviewView
+from Verba_App.verba.ui.themes import get_theme, THEME_NAMES
 
 
 class MainWindow:
@@ -66,26 +67,17 @@ class MainWindow:
         self.root.bind("<Left>", self.back_five)
 
     def configure_theme(self):
-        if self.settings.theme == "dark":
-            self.bg_color = "#1e1e1e"
-            self.panel_color = "#111111"
-            self.text_box_bg = "#2a2a2a"
-            self.text_color = "#ffffff"
-            self.subtle_text = "#cfcfcf"
-            self.border_color = "#333333"
-            self.sidebar_select = "#3a3a3a"
-            self.library_card = "#181818"
-            self.intro_accent = "#8f8f8f"
-        else:
-            self.bg_color = "#f4f4f4"
-            self.panel_color = "#ffffff"
-            self.text_box_bg = "#ffffff"
-            self.text_color = "#111111"
-            self.subtle_text = "#555555"
-            self.border_color = "#cccccc"
-            self.sidebar_select = "#d9d9d9"
-            self.library_card = "#f8f8f8"
-            self.intro_accent = "#7a7a7a"
+        palette = get_theme(self.settings.theme)
+
+        self.bg_color = palette["bg_color"]
+        self.panel_color = palette["panel_color"]
+        self.text_box_bg = palette["text_box_bg"]
+        self.text_color = palette["text_color"]
+        self.subtle_text = palette["subtle_text"]
+        self.border_color = palette["border_color"]
+        self.sidebar_select = palette["sidebar_select"]
+        self.library_card = palette["library_card"]
+        self.intro_accent = palette["intro_accent"]
 
         self.root.configure(bg=self.bg_color)
 
@@ -275,6 +267,27 @@ class MainWindow:
         tk.Button(top_buttons, text="Open Pasted Text", command=self.open_pasted_text_to_reader, width=18).grid(row=0, column=3, padx=6)
         tk.Button(top_buttons, text="Vocab", command=self.show_vocab_view, width=18).grid(row=0, column=4, padx=6)
         tk.Button(top_buttons, text="Stats", command=self.show_stats_view, width=18).grid(row=0, column=5, padx=6)
+
+        theme_frame = tk.Frame(self.library_view, bg=self.bg_color)
+        theme_frame.pack(pady=(0, 12))
+
+        tk.Label(
+            theme_frame,
+            text="Theme:",
+            font=("Helvetica", 10),
+            bg=self.bg_color,
+            fg=self.subtle_text
+        ).pack(side="left", padx=(0, 8))
+
+        self.theme_var = tk.StringVar(value=self.settings.theme if self.settings.theme in THEME_NAMES else "dark")
+        self.theme_menu = tk.OptionMenu(
+            theme_frame,
+            self.theme_var,
+            *THEME_NAMES,
+            command=self.on_theme_change
+        )
+        self.theme_menu.config(width=10)
+        self.theme_menu.pack(side="left")
 
         content = tk.Frame(self.library_view, bg=self.bg_color)
         content.pack(fill="both", expand=True, padx=30, pady=(5, 20))
@@ -976,6 +989,21 @@ class MainWindow:
         if not self.focus_mode:
             self.settings_manager.update(font_size=font_size)
 
+    def on_theme_change(self, theme_name):
+        if theme_name not in THEME_NAMES:
+            return
+
+        if theme_name == self.settings.theme:
+            return
+
+        self.settings_manager.update(theme=theme_name)
+        self.settings = self.settings_manager.settings
+
+        messagebox.showinfo(
+            "Theme Saved",
+            "Theme saved. Restart Verba to apply it everywhere."
+        )
+
     def on_display_double_click(self, event=None):
         self.add_to_vocab()
 
@@ -1348,7 +1376,14 @@ class MainWindow:
         )
 
         milliseconds_per_word = 60000 / self.wpm_scale.get()
-        delay = int(milliseconds_per_word * reading_units * multiplier)
+
+        # RSVP-style one-word display tends to feel faster than traditional
+        # reading because each word replaces the last immediately. This small
+        # comfort factor keeps the selected WPM feeling closer to human-paced
+        # reading without changing the reader engine itself.
+        comfort_pacing_factor = 1.15
+        delay = int(milliseconds_per_word * reading_units * multiplier * comfort_pacing_factor)
+        delay = max(delay, 90)
 
         if text:
             self.set_display_text(text)
