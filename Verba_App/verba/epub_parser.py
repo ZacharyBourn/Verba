@@ -103,6 +103,8 @@ def _looks_like_front_matter(title: str, text: str, file_name: str) -> bool:
 
     title_markers = {
         "copyright",
+        "volume",
+        "-volume",
         "title page",
         "dedication",
         "about the author",
@@ -186,6 +188,8 @@ def _is_probable_navigation_file(file_name: str) -> bool:
     lowered = file_name.lower()
     nav_markers = [
         "toc",
+        "volume",
+        "-volume",
         "contents",
         "nav",
         "navigation",
