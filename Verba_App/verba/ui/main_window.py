@@ -62,6 +62,8 @@ class MainWindow:
         self.try_restore_last_session(open_reader=False)
         self.start_intro_sequence()
 
+        self.overview_preview_active = False
+
         self.root.bind("<Escape>", self.exit_focus_mode)
         self.root.bind("<space>", self.toggle_play_pause)
         self.root.bind("<Left>", self.back_five)
@@ -1142,6 +1144,8 @@ class MainWindow:
             self.stats_manager.start_session()
             self.run_reader()
 
+        self.overview_preview_active = False
+
     def pause(self):
         self.running = False
         self.cancel_scheduled_reader()
@@ -1279,6 +1283,9 @@ class MainWindow:
         if not self.reader.has_text():
             return 0
 
+        if getattr(self, "overview_preview_active", False):
+            return self.reader.index
+
         current_index = self.reader.get_index()
         display_text = (self.current_display_text or "").strip()
 
@@ -1313,7 +1320,6 @@ class MainWindow:
 
         return max(0, candidate_index)
 
-
     def jump_to_reader_word_index(self, word_index: int):
         if not self.current_book or not self.reader.has_text():
             return
@@ -1324,7 +1330,18 @@ class MainWindow:
 
         self.reader.set_index(word_index)
         self.progress_label.config(text=f"Progress: {self.reader.get_progress()}%")
-        self.set_display_text("Jumped from overview. Press Start.")
+
+        selected_word = ""
+
+        if self.reader.has_text() and 0 <= word_index < len(self.reader.words):
+            selected_word = self.reader.words[word_index]
+
+        if selected_word == Reader.PARAGRAPH_BREAK_TOKEN:
+            selected_word = ""
+
+        self.overview_preview_active = True
+        self.set_display_text(selected_word or "Press Start.")
+
         self.save_session_position()
         self.refresh_sidebar()
         self.show_reader_view()
@@ -1351,6 +1368,8 @@ class MainWindow:
     def run_reader(self):
         if not self.running:
             return
+
+        self.overview_preview_active = False
 
         if self.reader.is_finished():
             self.running = False
