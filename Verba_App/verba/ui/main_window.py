@@ -752,7 +752,14 @@ class MainWindow:
         self.library_details_title.config(text=book.title)
         self.library_details_author.config(text=f"Author: {book.author}")
         self.library_details_type.config(text=f"Type: {book.file_type.upper()}")
-        self.library_details_chapters.config(text=f"Chapters: {len(book.chapters)}")
+
+        real_chapter_count = sum(
+            1 for chapter in book.chapters
+            if not getattr(chapter, "is_divider", False)
+        )
+
+        self.library_details_chapters.config(text=f"Chapters: {real_chapter_count}")
+
         self.library_details_path.config(
             text=f"Path: {book.file_path if book.file_path else 'Local / unsaved text'}"
         )

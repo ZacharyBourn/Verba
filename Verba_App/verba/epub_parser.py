@@ -43,22 +43,55 @@ def _extract_clean_text(html_content: bytes) -> str:
     return parser.get_text().strip()
 
 
+def _is_volume_or_divider_title(title: str) -> bool:
+    t = title.strip().lower()
+    return bool(
+        re.match(r"^volume\s+[ivxlcdm\d]+$", t) or
+        re.match(r"^volume\s+(one|two|three|four|five|six|seven|eight|nine|ten)$", t) or
+        re.match(r"^book\s+[ivxlcdm\d]+$", t) or
+        re.match(r"^book\s+(one|two|three|four|five|six|seven|eight|nine|ten)$", t) or
+        re.match(r"^part\s+[ivxlcdm\d]+$", t) or
+        re.match(r"^part\s+(one|two|three|four|five|six|seven|eight|nine|ten)$", t)
+    )
+
+
 def _extract_title_from_html(html_content: bytes) -> str:
     html = html_content.decode("utf-8", errors="ignore")
 
-    heading_patterns = [
-        r"<h1[^>]*>(.*?)</h1>",
-        r"<h2[^>]*>(.*?)</h2>",
-        r"<title[^>]*>(.*?)</title>",
-    ]
+    heading_pattern = r"<h([1-6])[^>]*>(.*?)</h\1>"
+    headings = []
 
-    for pattern in heading_patterns:
-        match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
-        if match:
-            raw = re.sub(r"<[^>]+>", "", match.group(1)).strip()
-            raw = re.sub(r"\s+", " ", raw)
-            if raw:
-                return raw
+    for match in re.finditer(heading_pattern, html, re.IGNORECASE | re.DOTALL):
+        raw = re.sub(r"<[^>]+>", "", match.group(2)).strip()
+        raw = re.sub(r"\s+", " ", raw)
+
+        if raw:
+            headings.append(raw)
+
+    # Prefer real chapter headings over volume/book/part dividers.
+    for heading in headings:
+        if _is_chapter_like_title(heading):
+            return heading
+
+    # If no chapter heading exists, use the first non-divider heading.
+    for heading in headings:
+        if not _is_volume_or_divider_title(heading):
+            return heading
+
+    # Last resort: use the first heading, even if it is a divider.
+    if headings:
+        return headings[0]
+
+    title_match = re.search(
+        r"<title[^>]*>(.*?)</title>",
+        html,
+        re.IGNORECASE | re.DOTALL
+    )
+
+    if title_match:
+        raw = re.sub(r"<[^>]+>", "", title_match.group(1)).strip()
+        raw = re.sub(r"\s+", " ", raw)
+        return raw
 
     return ""
 
@@ -103,8 +136,6 @@ def _looks_like_front_matter(title: str, text: str, file_name: str) -> bool:
 
     title_markers = {
         "copyright",
-        "volume",
-        "-volume",
         "title page",
         "dedication",
         "about the author",
@@ -188,8 +219,6 @@ def _is_probable_navigation_file(file_name: str) -> bool:
     lowered = file_name.lower()
     nav_markers = [
         "toc",
-        "volume",
-        "-volume",
         "contents",
         "nav",
         "navigation",
@@ -218,11 +247,7 @@ def _looks_like_book_title_page(book_title: str, title: str, text: str) -> bool:
 
 
 def _is_book_or_part_title(title: str) -> bool:
-    t = title.strip().lower()
-    return bool(
-        re.match(r"^book\s+[ivxlcdm\d]+$", t) or
-        re.match(r"^part\s+[ivxlcdm\d]+$", t)
-    )
+    return _is_volume_or_divider_title(title)
 
 
 def _is_chapter_like_title(title: str) -> bool:
@@ -237,6 +262,28 @@ def _is_chapter_like_title(title: str) -> bool:
     ]
 
     return any(re.search(pattern, t) for pattern in patterns)
+
+def _extract_divider_before_chapter_from_html(html_content: bytes) -> str:
+    html = html_content.decode("utf-8", errors="ignore")
+
+    heading_pattern = r"<h([1-6])[^>]*>(.*?)</h\1>"
+    headings = []
+
+    for match in re.finditer(heading_pattern, html, re.IGNORECASE | re.DOTALL):
+        raw = re.sub(r"<[^>]+>", "", match.group(2)).strip()
+        raw = re.sub(r"\s+", " ", raw)
+
+        if raw:
+            headings.append(raw)
+
+    for index, heading in enumerate(headings):
+        if _is_volume_or_divider_title(heading):
+            later_headings = headings[index + 1:]
+
+            if any(_is_chapter_like_title(later) for later in later_headings):
+                return heading
+
+    return ""
 
 
 def _fallback_title_from_filename(file_name: str, chapter_number: int, raw_text: str) -> str:
@@ -332,6 +379,17 @@ def load_epub_book(file_path: str) -> Book:
                 found_first_real_content = True
             elif text_len < 2500:
                 continue
+
+        divider_title = _extract_divider_before_chapter_from_html(raw_content)
+
+        if divider_title and (not chapters or chapters[-1].title != divider_title):
+            chapters.append(
+                Chapter(
+                    title=divider_title,
+                    text=divider_title,
+                    is_divider=True
+                )
+            )
 
         title_to_use = item_title
         if not title_to_use or len(title_to_use) > 80:

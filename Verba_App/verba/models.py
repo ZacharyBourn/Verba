@@ -44,6 +44,7 @@ class Bookmark:
 class Chapter:
     title: str
     text: str
+    is_divider: bool = False
 
     def to_dict(self):
         return asdict(self)
