@@ -17,6 +17,7 @@ from Verba_App.verba.ui.stats_view import StatsView
 from Verba_App.verba.ui.vocab_view import VocabView
 from Verba_App.verba.ui.bookmarks_panel import BookmarksPanel
 from Verba_App.verba.ui.overview_view import OverviewView
+from Verba_App.verba.ui.notes_view import NotesView
 from Verba_App.verba.ui.themes import get_theme, THEME_NAMES
 
 
@@ -37,6 +38,7 @@ class MainWindow:
         self.current_bookmark_entries = []
         self.current_display_text = ""
         self.selected_word = ""
+        self.notes_target_book = None
 
         self.settings = self.settings_manager.settings
         self.session = self.session_manager.session
@@ -92,10 +94,12 @@ class MainWindow:
         self.stats_view_frame = tk.Frame(self.container, bg=self.bg_color)
         self.vocab_view_frame = tk.Frame(self.container, bg=self.bg_color)
         self.overview_view_frame = tk.Frame(self.container, bg=self.bg_color)
+        self.notes_view_frame = tk.Frame(self.container, bg=self.bg_color)
 
         self.stats_view = StatsView(self, self.stats_view_frame)
         self.vocab_view = VocabView(self, self.vocab_view_frame)
         self.overview_view = OverviewView(self, self.overview_view_frame)
+        self.notes_view = NotesView(self, self.notes_view_frame)
 
         self.build_library_view()
         self.build_reader_view()
@@ -404,6 +408,26 @@ class MainWindow:
         )
         self.library_details_path.pack(anchor="w", padx=14, pady=(0, 14))
 
+        self.library_details_notes_preview = tk.Label(
+            right_panel,
+            text="",
+            font=("Helvetica", 10),
+            bg=self.library_card,
+            fg=self.subtle_text,
+            wraplength=280,
+            justify="left",
+            anchor="w"
+        )
+        self.library_details_notes_preview.pack(anchor="w", padx=14, pady=(0, 10))
+
+        self.library_notes_button = tk.Button(
+            right_panel,
+            text="Book Notes",
+            command=lambda: self.show_notes_view(self.get_selected_library_book()),
+            width=16
+        )
+        self.library_notes_button.pack(anchor="w", padx=14, pady=(0, 14))
+
         bottom_area = tk.Frame(self.library_view, bg=self.bg_color)
         bottom_area.pack(fill="x", padx=30, pady=(0, 24))
 
@@ -524,6 +548,9 @@ class MainWindow:
 
         self.reader_overview_button = tk.Button(self.top_bar, text="Overview", command=self.show_overview_view, width=10)
         self.reader_overview_button.pack(side="right", padx=(0, 8))
+
+        self.reader_notes_button = tk.Button(self.top_bar, text="Notes", command=self.show_notes_view, width=10)
+        self.reader_notes_button.pack(side="right", padx=(0, 8))
 
         self.title_label = tk.Label(
             self.main_area,
@@ -668,6 +695,7 @@ class MainWindow:
         self.stats_view_frame.pack_forget()
         self.vocab_view_frame.pack_forget()
         self.overview_view_frame.pack_forget()
+        self.notes_view_frame.pack_forget()
 
     def show_library_view(self):
         if self.focus_mode:
@@ -728,6 +756,73 @@ class MainWindow:
         self.overview_view.render()
         self.overview_view_frame.pack(fill="both", expand=True)
 
+    def show_notes_view(self, book=None):
+        if self.focus_mode:
+            self.toggle_focus_mode()
+
+        self.running = False
+        self.cancel_scheduled_reader()
+        self._flush_stats_session()
+
+        target_book = book or self.current_book or self.get_selected_library_book()
+        if not target_book:
+            messagebox.showinfo("No Book", "Select or open a book before writing notes.")
+            return
+
+        self.notes_target_book = target_book
+        self.hide_content_views()
+        self.notes_view.render()
+        self.notes_view_frame.pack(fill="both", expand=True)
+
+    def get_selected_library_book(self):
+        try:
+            selection = self.library_listbox.curselection()
+        except Exception:
+            return None
+
+        if not selection:
+            return None
+
+        books = self.library_manager.all_books()
+        index = selection[0]
+        if not (0 <= index < len(books)):
+            return None
+
+        return books[index]
+
+    def save_book_notes(self, book: Book, notes: str):
+        book.notes = notes
+
+        saved_book = self.library_manager.get_book(book.book_id)
+        if saved_book:
+            saved_book.notes = notes
+            self.library_manager.save()
+
+        if self.current_book and self.current_book.book_id == book.book_id:
+            self.current_book.notes = notes
+
+        self.refresh_library_notes_preview(book)
+
+    def refresh_library_notes_preview(self, book: Book = None):
+        if not hasattr(self, "library_details_notes_preview"):
+            return
+
+        if book is None:
+            book = self.get_selected_library_book()
+
+        if not book:
+            self.library_details_notes_preview.config(text="")
+            return
+
+        notes = getattr(book, "notes", "").strip()
+        if notes:
+            preview = notes.replace("\n", " ")
+            if len(preview) > 120:
+                preview = preview[:117].rstrip() + "..."
+            self.library_details_notes_preview.config(text=f"Notes: {preview}")
+        else:
+            self.library_details_notes_preview.config(text="Notes: None yet")
+
     def refresh_library_view(self):
         self.library_manager.reload()
         self.library_listbox.delete(0, tk.END)
@@ -741,6 +836,7 @@ class MainWindow:
         self.library_details_type.config(text="")
         self.library_details_chapters.config(text="")
         self.library_details_path.config(text="")
+        self.refresh_library_notes_preview(None)
 
     def on_library_select(self, event):
         selection = self.library_listbox.curselection()
@@ -760,6 +856,7 @@ class MainWindow:
         self.library_details_path.config(
             text=f"Path: {book.file_path if book.file_path else 'Local / unsaved text'}"
         )
+        self.refresh_library_notes_preview(book)
 
     def on_library_activate(self, event):
         self.open_selected_library_book()
@@ -1072,6 +1169,35 @@ class MainWindow:
 
         self.refresh_library_view()
 
+    def restore_reader_layout(self):
+        for widget in [
+            self.top_bar,
+            self.title_label,
+            self.book_label,
+            self.chapter_label,
+            self.display_frame,
+            self.progress_label,
+            self.controls_frame,
+            self.chapter_controls,
+            self.sliders_frame,
+        ]:
+            widget.pack_forget()
+
+        self.top_bar.pack(fill="x", pady=(14, 0), padx=20)
+        self.title_label.pack(pady=(10, 10))
+        self.book_label.pack(pady=(0, 5))
+        self.chapter_label.pack(pady=(0, 10))
+        self.display_frame.pack(pady=20)
+        self.progress_label.pack(pady=(0, 15))
+        self.controls_frame.pack(pady=10)
+        self.chapter_controls.pack(pady=5)
+        self.sliders_frame.pack(pady=10)
+
+        self.display_frame.config(width=760, height=220)
+        self.display_text.config(
+            font=(self.settings.font_family, self.settings.font_size, "bold")
+        )
+
     def toggle_focus_mode(self):
         self.focus_mode = not self.focus_mode
 
@@ -1099,37 +1225,6 @@ class MainWindow:
             self.sidebar.pack(side="left", fill="y")
             self.restore_reader_layout()
             self.root.after(75, self.focus_reader_view)
-
-    def restore_reader_layout(self):
-        # Clear reader layout widgets so they can be packed back in the correct order.
-        for widget in [
-            self.top_bar,
-            self.title_label,
-            self.book_label,
-            self.chapter_label,
-            self.display_frame,
-            self.progress_label,
-            self.controls_frame,
-            self.chapter_controls,
-            self.sliders_frame,
-        ]:
-            widget.pack_forget()
-
-        # Restore normal reader layout order.
-        self.top_bar.pack(fill="x", pady=(14, 0), padx=20)
-        self.title_label.pack(pady=(10, 10))
-        self.book_label.pack(pady=(0, 5))
-        self.chapter_label.pack(pady=(0, 10))
-        self.display_frame.pack(pady=20)
-        self.progress_label.pack(pady=(0, 15))
-        self.controls_frame.pack(pady=10)
-        self.chapter_controls.pack(pady=5)
-        self.sliders_frame.pack(pady=10)
-
-        self.display_frame.config(width=760, height=220)
-        self.display_text.config(
-            font=(self.settings.font_family, self.settings.font_size, "bold")
-        )
 
     def exit_focus_mode(self, event=None):
         if self.focus_mode:
