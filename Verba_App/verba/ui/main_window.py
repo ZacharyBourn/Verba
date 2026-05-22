@@ -39,6 +39,7 @@ class MainWindow:
         self.current_display_text = ""
         self.selected_word = ""
         self.reader_notes_visible = False
+        self.notes_return_view = "library"
 
         self.settings = self.settings_manager.settings
         self.session = self.session_manager.session
@@ -731,7 +732,7 @@ class MainWindow:
         tk.Button(
             header,
             text="Full Notes View",
-            command=self.show_notes_view,
+            command=lambda: self.show_notes_view(return_to="reader"),
             width=14
         ).pack(side="right", padx=(0, 8))
 
@@ -835,7 +836,9 @@ class MainWindow:
         self.overview_view.render()
         self.overview_view_frame.pack(fill="both", expand=True)
 
-    def show_notes_view(self):
+    def show_notes_view(self, return_to="library"):
+        self.notes_return_view = return_to
+
         if self.focus_mode:
             self.toggle_focus_mode()
 
@@ -862,7 +865,7 @@ class MainWindow:
             return
 
         self.current_book = self.library_manager.all_books()[selection[0]]
-        self.show_notes_view()
+        self.show_notes_view(return_to="library")
 
     def refresh_library_view(self):
         self.library_manager.reload()
@@ -1100,6 +1103,7 @@ class MainWindow:
     def hide_reader_notes(self):
         self.reader_notes_frame.pack_forget()
         self.reader_notes_visible = False
+        self.notes_return_view = "library"
         self.root.after(50, self.focus_reader_view)
 
     def save_reader_notes(self):
@@ -1405,13 +1409,40 @@ class MainWindow:
         self.progress_label.config(text=f"Progress: {self.reader.get_progress()}%")
         self.save_session_position()
 
+    def _keyboard_focus_is_text_input(self):
+        focused_widget = self.root.focus_get()
+
+        if focused_widget is None:
+            return False
+
+        # Do not let global reader shortcuts fire while the user is typing
+        # notes or editing any normal text/entry widget.
+        if isinstance(focused_widget, tk.Text):
+            try:
+                return str(focused_widget.cget("state")) != "disabled"
+            except tk.TclError:
+                return True
+
+        if isinstance(focused_widget, (tk.Entry, tk.Spinbox)):
+            return True
+
+        return False
+
     def toggle_play_pause(self, event=None):
+        if self._keyboard_focus_is_text_input():
+            return "break"
+
         if self.running:
             self.pause()
         else:
             self.start()
 
+        return "break"
+
     def back_five(self, event=None):
+        if self._keyboard_focus_is_text_input():
+            return "break"
+
         if not self.reader.has_text():
             return
 

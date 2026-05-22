@@ -25,14 +25,19 @@ class NotesView:
         header = tk.Frame(self.parent, bg=self.app.bg_color)
         header.pack(fill="x", padx=30, pady=(24, 12))
 
+        return_to_reader = (
+            getattr(self.app, "notes_return_view", "library") == "reader"
+            and self.app.current_book is not None
+        )
+
         tk.Button(
             header,
-            text="← Library",
-            command=self.app.show_library_view,
+            text="← Back" if return_to_reader else "← Library",
+            command=self.app.show_reader_view if return_to_reader else self.app.show_library_view,
             width=12
         ).pack(side="left")
 
-        if self.app.current_book:
+        if self.app.current_book and not return_to_reader:
             tk.Button(
                 header,
                 text="Reader",
@@ -114,6 +119,14 @@ class NotesView:
             command=self.save_notes,
             width=12
         ).pack(side="right")
+
+        if return_to_reader:
+            tk.Button(
+                footer,
+                text="← Back to Reader",
+                command=self.app.show_reader_view,
+                width=16
+            ).pack(side="right", padx=(0, 8))
 
     def save_notes(self):
         if not self.app.current_book:
