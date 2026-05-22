@@ -3,32 +3,29 @@ from tkinter import messagebox
 
 
 class NotesView:
-    """Embedded book-notes view.
-
-    These are book-level notes, saved directly on the current Book object.
-    They are accessible from both the Library and Reader screens.
-    """
+    """Embedded full-page book notes view."""
 
     def __init__(self, app, parent):
         self.app = app
         self.parent = parent
-        self.notes_text = None
+        self.book = None
+        self.return_target = "library"
+        self.text = None
+        self.title_label = None
         self.status_label = None
 
-    def clear(self):
+    def render(self, book=None, return_target="library"):
         for widget in self.parent.winfo_children():
             widget.destroy()
 
-    def render(self):
-        self.clear()
+        self.book = book or self.app.current_book
+        self.return_target = return_target
 
-        book = getattr(self.app, "notes_target_book", None) or self.app.current_book or self.app.get_selected_library_book()
+        container = tk.Frame(self.parent, bg=self.app.bg_color)
+        container.pack(fill="both", expand=True, padx=30, pady=24)
 
-        shell = tk.Frame(self.parent, bg=self.app.bg_color)
-        shell.pack(fill="both", expand=True, padx=30, pady=24)
-
-        top_bar = tk.Frame(shell, bg=self.app.bg_color)
-        top_bar.pack(fill="x", pady=(0, 16))
+        top_bar = tk.Frame(container, bg=self.app.bg_color)
+        top_bar.pack(fill="x", pady=(0, 18))
 
         tk.Button(
             top_bar,
@@ -45,55 +42,37 @@ class NotesView:
                 width=12
             ).pack(side="left", padx=(8, 0))
 
-        tk.Button(
-            top_bar,
-            text="Save Notes",
-            command=self.save_notes,
-            width=12
-        ).pack(side="right")
-
-        title = "Book Notes"
-        subtitle = "Select or open a book to write notes."
-
-        if book:
-            title = f"Notes — {book.title}"
-            subtitle = "General notes for this book. These save with the library entry."
-
-        tk.Label(
-            shell,
-            text=title,
+        self.title_label = tk.Label(
+            container,
+            text=self._title_text(),
             font=("Helvetica", 22, "bold"),
             bg=self.app.bg_color,
             fg=self.app.text_color,
             wraplength=900,
             justify="left"
-        ).pack(anchor="w", pady=(0, 6))
+        )
+        self.title_label.pack(anchor="w", pady=(0, 8))
 
         tk.Label(
-            shell,
-            text=subtitle,
-            font=("Helvetica", 11),
+            container,
+            text="General notes for this book.",
+            font=("Helvetica", 12),
             bg=self.app.bg_color,
-            fg=self.app.subtle_text,
-            wraplength=900,
-            justify="left"
-        ).pack(anchor="w", pady=(0, 16))
+            fg=self.app.subtle_text
+        ).pack(anchor="w", pady=(0, 12))
 
-        editor_frame = tk.Frame(
-            shell,
+        text_frame = tk.Frame(
+            container,
             bg=self.app.panel_color,
             highlightbackground=self.app.border_color,
             highlightthickness=1
         )
-        editor_frame.pack(fill="both", expand=True)
+        text_frame.pack(fill="both", expand=True)
 
-        scrollbar = tk.Scrollbar(editor_frame)
-        scrollbar.pack(side="right", fill="y")
-
-        self.notes_text = tk.Text(
-            editor_frame,
+        self.text = tk.Text(
+            text_frame,
             wrap="word",
-            font=(self.app.settings.font_family, 13),
+            font=("Helvetica", 12),
             bg=self.app.text_box_bg,
             fg=self.app.text_color,
             insertbackground=self.app.text_color,
@@ -101,45 +80,66 @@ class NotesView:
             highlightthickness=0,
             borderwidth=0,
             padx=18,
-            pady=16,
-            yscrollcommand=scrollbar.set
+            pady=18
         )
-        self.notes_text.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=self.notes_text.yview)
+        self.text.pack(side="left", fill="both", expand=True)
 
-        if book:
-            self.notes_text.insert("1.0", getattr(book, "notes", ""))
-        else:
-            self.notes_text.insert("1.0", "No book selected.")
-            self.notes_text.config(state="disabled")
+        scrollbar = tk.Scrollbar(text_frame, command=self.text.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.text.configure(yscrollcommand=scrollbar.set)
 
-        bottom_bar = tk.Frame(shell, bg=self.app.bg_color)
-        bottom_bar.pack(fill="x", pady=(12, 0))
+        if self.book:
+            self.text.insert("1.0", getattr(self.book, "notes", ""))
+
+        button_bar = tk.Frame(container, bg=self.app.bg_color)
+        button_bar.pack(fill="x", pady=(16, 0))
+
+        tk.Button(
+            button_bar,
+            text="Save Notes",
+            command=self.save_notes,
+            width=14
+        ).pack(side="left")
+
+        tk.Button(
+            button_bar,
+            text="Back",
+            command=self.go_back,
+            width=12
+        ).pack(side="left", padx=(8, 0))
 
         self.status_label = tk.Label(
-            bottom_bar,
+            button_bar,
             text="",
-            font=("Helvetica", 10),
+            font=("Helvetica", 11),
             bg=self.app.bg_color,
             fg=self.app.subtle_text
         )
-        self.status_label.pack(side="left")
+        self.status_label.pack(side="left", padx=(12, 0))
 
-        if book:
-            self.notes_text.focus_set()
+        self.text.focus_set()
+
+    def _title_text(self):
+        if not self.book:
+            return "Book Notes"
+
+        return f"Book Notes: {self.book.title}"
 
     def save_notes(self):
-        if not self.notes_text:
+        if not self.book:
+            messagebox.showinfo("No Book", "Open or select a book first.")
             return
 
-        book = getattr(self.app, "notes_target_book", None) or self.app.current_book or self.app.get_selected_library_book()
-        if not book:
-            messagebox.showinfo("No Book", "Select or open a book before saving notes.")
-            return
-
-        notes = self.notes_text.get("1.0", tk.END).strip()
-        self.app.save_book_notes(book, notes)
+        self.book.notes = self.text.get("1.0", tk.END).strip()
+        self.app.save_book_notes(self.book)
 
         if self.status_label:
-            self.status_label.config(text="Notes saved.")
-            self.app.root.after(2500, lambda: self.status_label and self.status_label.config(text=""))
+            self.status_label.config(text="Saved.")
+
+        self.app.refresh_library_note_preview_for_book(self.book)
+
+    def go_back(self):
+        if self.return_target == "reader" and self.app.current_book:
+            self.app.show_reader_view()
+        else:
+            self.app.show_library_view()
