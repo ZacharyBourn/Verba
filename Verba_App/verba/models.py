@@ -8,7 +8,7 @@ class UserSettings:
     theme: str = "dark"
     font_size: int = 34
     font_family: str = "Helvetica"
-    default_wpm: int = 240
+    default_wpm: int = 300
     default_chunk_size: int = 1
     punctuation_slowdown: bool = True
     window_width: int = 1000
@@ -73,7 +73,15 @@ class Book:
 
     @classmethod
     def from_dict(cls, data: dict):
-        chapters = [Chapter(**chapter) for chapter in data.get("chapters", [])]
+        chapters = [
+            Chapter(
+                title=chapter.get("title", ""),
+                text=chapter.get("text", ""),
+                is_divider=chapter.get("is_divider", False)
+            )
+            for chapter in data.get("chapters", [])
+        ]
+
         return cls(
             book_id=data["book_id"],
             title=data["title"],
