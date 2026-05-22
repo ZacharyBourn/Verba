@@ -3,7 +3,7 @@
 
 Verba is a focused desktop reading app for TXT and EPUB books.
 
-The goal of Verba is to make reading feel cleaner, less distracting, and easier to track. It currently supports importing books, reading in a focused word/chunk view, saving bookmarks, tracking reading stats, and saving vocabulary words.
+The goal of Verba is to preserve reading, and present it to the younger generation in a way that makes it more accessible.
 
 ## Current Features
 
