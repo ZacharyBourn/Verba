@@ -17,6 +17,7 @@ from Verba_App.verba.ui.stats_view import StatsView
 from Verba_App.verba.ui.vocab_view import VocabView
 from Verba_App.verba.ui.bookmarks_panel import BookmarksPanel
 from Verba_App.verba.ui.overview_view import OverviewView
+from Verba_App.verba.ui.notes_view import NotesView
 from Verba_App.verba.ui.themes import get_theme, THEME_NAMES
 
 
@@ -37,6 +38,8 @@ class MainWindow:
         self.current_bookmark_entries = []
         self.current_display_text = ""
         self.selected_word = ""
+        self.reader_notes_visible = False
+        self.notes_return_view = "library"
 
         self.settings = self.settings_manager.settings
         self.session = self.session_manager.session
@@ -92,10 +95,12 @@ class MainWindow:
         self.stats_view_frame = tk.Frame(self.container, bg=self.bg_color)
         self.vocab_view_frame = tk.Frame(self.container, bg=self.bg_color)
         self.overview_view_frame = tk.Frame(self.container, bg=self.bg_color)
+        self.notes_view_frame = tk.Frame(self.container, bg=self.bg_color)
 
         self.stats_view = StatsView(self, self.stats_view_frame)
         self.vocab_view = VocabView(self, self.vocab_view_frame)
         self.overview_view = OverviewView(self, self.overview_view_frame)
+        self.notes_view = NotesView(self, self.notes_view_frame)
 
         self.build_library_view()
         self.build_reader_view()
@@ -269,6 +274,7 @@ class MainWindow:
         tk.Button(top_buttons, text="Open Pasted Text", command=self.open_pasted_text_to_reader, width=18).grid(row=0, column=3, padx=6)
         tk.Button(top_buttons, text="Vocab", command=self.show_vocab_view, width=18).grid(row=0, column=4, padx=6)
         tk.Button(top_buttons, text="Stats", command=self.show_stats_view, width=18).grid(row=0, column=5, padx=6)
+        tk.Button(top_buttons, text="Book Notes", command=self.show_notes_view_for_selected_book, width=18).grid(row=0, column=6, padx=6)
 
         theme_frame = tk.Frame(self.library_view, bg=self.bg_color)
         theme_frame.pack(pady=(0, 12))
@@ -402,7 +408,37 @@ class MainWindow:
             justify="left",
             anchor="w"
         )
-        self.library_details_path.pack(anchor="w", padx=14, pady=(0, 14))
+        self.library_details_path.pack(anchor="w", padx=14, pady=(0, 12))
+
+        tk.Label(
+            right_panel,
+            text="Notes Preview",
+            font=("Helvetica", 11, "bold"),
+            bg=self.library_card,
+            fg=self.text_color,
+            wraplength=280,
+            justify="left",
+            anchor="w"
+        ).pack(anchor="w", padx=14, pady=(4, 6))
+
+        self.library_notes_preview = tk.Label(
+            right_panel,
+            text="No notes yet.",
+            font=("Helvetica", 10),
+            bg=self.library_card,
+            fg=self.subtle_text,
+            wraplength=280,
+            justify="left",
+            anchor="nw"
+        )
+        self.library_notes_preview.pack(anchor="w", fill="x", padx=14, pady=(0, 12))
+
+        tk.Button(
+            right_panel,
+            text="Open Book Notes",
+            command=self.show_notes_view_for_selected_book,
+            width=18
+        ).pack(anchor="w", padx=14, pady=(0, 14))
 
         bottom_area = tk.Frame(self.library_view, bg=self.bg_color)
         bottom_area.pack(fill="x", padx=30, pady=(0, 24))
@@ -524,6 +560,9 @@ class MainWindow:
 
         self.reader_overview_button = tk.Button(self.top_bar, text="Overview", command=self.show_overview_view, width=10)
         self.reader_overview_button.pack(side="right", padx=(0, 8))
+
+        self.reader_notes_button = tk.Button(self.top_bar, text="Notes", command=self.toggle_reader_notes, width=10)
+        self.reader_notes_button.pack(side="right", padx=(0, 8))
 
         self.title_label = tk.Label(
             self.main_area,
@@ -662,12 +701,81 @@ class MainWindow:
         self.font_scale.set(self.settings.font_size)
         self.font_scale.grid(row=0, column=2, padx=15)
 
+        self.build_reader_notes_panel()
+
+    def build_reader_notes_panel(self):
+        self.reader_notes_frame = tk.Frame(
+            self.main_area,
+            bg=self.panel_color,
+            highlightbackground=self.border_color,
+            highlightthickness=1
+        )
+
+        header = tk.Frame(self.reader_notes_frame, bg=self.panel_color)
+        header.pack(fill="x", padx=14, pady=(12, 6))
+
+        tk.Label(
+            header,
+            text="Book Notes",
+            font=("Helvetica", 12, "bold"),
+            bg=self.panel_color,
+            fg=self.text_color
+        ).pack(side="left")
+
+        tk.Button(
+            header,
+            text="Hide",
+            command=self.hide_reader_notes,
+            width=10
+        ).pack(side="right")
+
+        tk.Button(
+            header,
+            text="Full Notes View",
+            command=lambda: self.show_notes_view(return_to="reader"),
+            width=14
+        ).pack(side="right", padx=(0, 8))
+
+        self.reader_notes_text = tk.Text(
+            self.reader_notes_frame,
+            height=7,
+            wrap="word",
+            font=("Helvetica", 11),
+            bg=self.text_box_bg,
+            fg=self.text_color,
+            insertbackground=self.text_color,
+            relief="flat",
+            padx=12,
+            pady=10
+        )
+        self.reader_notes_text.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+
+        footer = tk.Frame(self.reader_notes_frame, bg=self.panel_color)
+        footer.pack(fill="x", padx=14, pady=(0, 12))
+
+        self.reader_notes_status = tk.Label(
+            footer,
+            text="",
+            font=("Helvetica", 10),
+            bg=self.panel_color,
+            fg=self.subtle_text
+        )
+        self.reader_notes_status.pack(side="left")
+
+        tk.Button(
+            footer,
+            text="Save Notes",
+            command=self.save_reader_notes,
+            width=12
+        ).pack(side="right")
+
     def hide_content_views(self):
         self.library_view.pack_forget()
         self.reader_view.pack_forget()
         self.stats_view_frame.pack_forget()
         self.vocab_view_frame.pack_forget()
         self.overview_view_frame.pack_forget()
+        self.notes_view_frame.pack_forget()
 
     def show_library_view(self):
         if self.focus_mode:
@@ -728,6 +836,37 @@ class MainWindow:
         self.overview_view.render()
         self.overview_view_frame.pack(fill="both", expand=True)
 
+    def show_notes_view(self, return_to="library"):
+        self.notes_return_view = return_to
+
+        if self.focus_mode:
+            self.toggle_focus_mode()
+
+        self.running = False
+        self.cancel_scheduled_reader()
+        self._flush_stats_session()
+
+        if not self.current_book:
+            selection = self.library_listbox.curselection()
+            if selection:
+                self.current_book = self.library_manager.all_books()[selection[0]]
+            else:
+                messagebox.showinfo("No Book", "Open or select a book first.")
+                return
+
+        self.hide_content_views()
+        self.notes_view.render()
+        self.notes_view_frame.pack(fill="both", expand=True)
+
+    def show_notes_view_for_selected_book(self):
+        selection = self.library_listbox.curselection()
+        if not selection:
+            messagebox.showinfo("No Selection", "Select a book from the library first.")
+            return
+
+        self.current_book = self.library_manager.all_books()[selection[0]]
+        self.show_notes_view(return_to="library")
+
     def refresh_library_view(self):
         self.library_manager.reload()
         self.library_listbox.delete(0, tk.END)
@@ -741,6 +880,8 @@ class MainWindow:
         self.library_details_type.config(text="")
         self.library_details_chapters.config(text="")
         self.library_details_path.config(text="")
+        if hasattr(self, "library_notes_preview"):
+            self.library_notes_preview.config(text="No notes yet.")
 
     def on_library_select(self, event):
         selection = self.library_listbox.curselection()
@@ -760,6 +901,15 @@ class MainWindow:
         self.library_details_path.config(
             text=f"Path: {book.file_path if book.file_path else 'Local / unsaved text'}"
         )
+
+        notes = getattr(book, "notes", "").strip()
+        if notes:
+            preview = notes.replace("\n", " ")
+            if len(preview) > 170:
+                preview = preview[:167].rstrip() + "..."
+            self.library_notes_preview.config(text=preview)
+        else:
+            self.library_notes_preview.config(text="No notes yet.")
 
     def on_library_activate(self, event):
         self.open_selected_library_book()
@@ -927,6 +1077,67 @@ class MainWindow:
         self.save_session_position()
         self.refresh_sidebar()
 
+    def load_current_book_notes_into_reader_panel(self):
+        if not self.current_book:
+            return
+
+        notes = getattr(self.current_book, "notes", "")
+        self.reader_notes_text.delete("1.0", tk.END)
+        self.reader_notes_text.insert("1.0", notes)
+        self.reader_notes_status.config(text="")
+
+    def toggle_reader_notes(self):
+        if self.reader_notes_visible:
+            self.hide_reader_notes()
+            return
+
+        if not self.current_book:
+            messagebox.showinfo("No Book", "Open a book first.")
+            return
+
+        self.load_current_book_notes_into_reader_panel()
+        self.reader_notes_frame.pack(fill="x", padx=20, pady=(4, 16))
+        self.reader_notes_visible = True
+        self.reader_notes_text.focus_set()
+
+    def hide_reader_notes(self):
+        self.reader_notes_frame.pack_forget()
+        self.reader_notes_visible = False
+        self.notes_return_view = "library"
+        self.root.after(50, self.focus_reader_view)
+
+    def save_reader_notes(self):
+        if not self.current_book:
+            messagebox.showinfo("No Book", "Open a book first.")
+            return
+
+        self.current_book.notes = self.reader_notes_text.get("1.0", tk.END).strip()
+
+        # Save through the library manager when this book belongs to the saved library.
+        stored_book = self.library_manager.get_book(self.current_book.book_id)
+        if stored_book:
+            stored_book.notes = self.current_book.notes
+            self.library_manager.save()
+
+        self.reader_notes_status.config(text="Notes saved.")
+        self.root.after(2500, lambda: self.reader_notes_status.config(text=""))
+
+    def save_current_book_notes(self, notes_text: str):
+        if not self.current_book:
+            return
+
+        self.current_book.notes = notes_text.strip()
+
+        stored_book = self.library_manager.get_book(self.current_book.book_id)
+        if stored_book:
+            stored_book.notes = self.current_book.notes
+            self.library_manager.save()
+
+        if self.reader_notes_visible:
+            self.load_current_book_notes_into_reader_panel()
+
+        self.refresh_library_view()
+
     def set_display_text(self, text):
         self.current_display_text = text
         self.selected_word = ""
@@ -1051,6 +1262,9 @@ class MainWindow:
         self.session = self.session_manager.session
         self.refresh_sidebar()
 
+        if self.reader_notes_visible:
+            self.load_current_book_notes_into_reader_panel()
+
     def try_restore_last_session(self, open_reader=False):
         if not self.session.current_book_id or not self.session.last_opened_file:
             self.refresh_library_view()
@@ -1080,6 +1294,7 @@ class MainWindow:
             self.controls_frame.pack_forget()
             self.chapter_controls.pack_forget()
             self.sliders_frame.pack_forget()
+            self.reader_notes_frame.pack_forget()
             self.progress_label.pack_forget()
             self.book_label.pack_forget()
             self.chapter_label.pack_forget()
@@ -1112,6 +1327,7 @@ class MainWindow:
             self.controls_frame,
             self.chapter_controls,
             self.sliders_frame,
+            self.reader_notes_frame,
         ]:
             widget.pack_forget()
 
@@ -1125,6 +1341,8 @@ class MainWindow:
         self.controls_frame.pack(pady=10)
         self.chapter_controls.pack(pady=5)
         self.sliders_frame.pack(pady=10)
+        if self.reader_notes_visible:
+            self.reader_notes_frame.pack(fill="x", padx=20, pady=(4, 16))
 
         self.display_frame.config(width=760, height=220)
         self.display_text.config(
@@ -1191,13 +1409,40 @@ class MainWindow:
         self.progress_label.config(text=f"Progress: {self.reader.get_progress()}%")
         self.save_session_position()
 
+    def _keyboard_focus_is_text_input(self):
+        focused_widget = self.root.focus_get()
+
+        if focused_widget is None:
+            return False
+
+        # Do not let global reader shortcuts fire while the user is typing
+        # notes or editing any normal text/entry widget.
+        if isinstance(focused_widget, tk.Text):
+            try:
+                return str(focused_widget.cget("state")) != "disabled"
+            except tk.TclError:
+                return True
+
+        if isinstance(focused_widget, (tk.Entry, tk.Spinbox)):
+            return True
+
+        return False
+
     def toggle_play_pause(self, event=None):
+        if self._keyboard_focus_is_text_input():
+            return "break"
+
         if self.running:
             self.pause()
         else:
             self.start()
 
+        return "break"
+
     def back_five(self, event=None):
+        if self._keyboard_focus_is_text_input():
+            return "break"
+
         if not self.reader.has_text():
             return
 
