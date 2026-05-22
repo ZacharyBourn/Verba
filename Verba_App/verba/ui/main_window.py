@@ -1095,24 +1095,41 @@ class MainWindow:
             self.root.attributes("-fullscreen", True)
 
         else:
-            self.sidebar.pack(side="left", fill="y")
-            self.top_bar.pack(fill="x", pady=(14, 0), padx=20)
-            self.title_label.pack_configure(pady=(10, 10))
-            self.book_label.pack(pady=(0, 5))
-            self.chapter_label.pack(pady=(0, 10))
-            self.progress_label.pack(pady=(0, 15))
-            self.controls_frame.pack(pady=10)
-            self.chapter_controls.pack(pady=5)
-            self.sliders_frame.pack(pady=10)
-
-            self.display_frame.config(width=760, height=220)
-            self.display_frame.pack_configure(pady=20)
-
-            self.display_text.config(
-                font=(self.settings.font_family, self.settings.font_size, "bold")
-            )
-
             self.root.attributes("-fullscreen", False)
+            self.sidebar.pack(side="left", fill="y")
+            self.restore_reader_layout()
+            self.root.after(75, self.focus_reader_view)
+
+    def restore_reader_layout(self):
+        # Clear reader layout widgets so they can be packed back in the correct order.
+        for widget in [
+            self.top_bar,
+            self.title_label,
+            self.book_label,
+            self.chapter_label,
+            self.display_frame,
+            self.progress_label,
+            self.controls_frame,
+            self.chapter_controls,
+            self.sliders_frame,
+        ]:
+            widget.pack_forget()
+
+        # Restore normal reader layout order.
+        self.top_bar.pack(fill="x", pady=(14, 0), padx=20)
+        self.title_label.pack(pady=(10, 10))
+        self.book_label.pack(pady=(0, 5))
+        self.chapter_label.pack(pady=(0, 10))
+        self.display_frame.pack(pady=20)
+        self.progress_label.pack(pady=(0, 15))
+        self.controls_frame.pack(pady=10)
+        self.chapter_controls.pack(pady=5)
+        self.sliders_frame.pack(pady=10)
+
+        self.display_frame.config(width=760, height=220)
+        self.display_text.config(
+            font=(self.settings.font_family, self.settings.font_size, "bold")
+        )
 
     def exit_focus_mode(self, event=None):
         if self.focus_mode:
