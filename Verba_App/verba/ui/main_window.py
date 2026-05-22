@@ -481,7 +481,7 @@ class MainWindow:
 
         self.chapter_listbox = tk.Listbox(
             self.sidebar,
-            height=14,
+            height=20, #CHANGES THE SIZE OF THE CHAPTER LIST BOX ON SIDE OF WINDOW
             bg=self.panel_color,
             fg=self.text_color,
             selectbackground=self.sidebar_select,
