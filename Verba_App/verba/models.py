@@ -58,6 +58,7 @@ class Book:
     file_path: str = ""
     file_type: str = "txt"
     chapters: List[Chapter] = field(default_factory=list)
+    notes: str = ""
 
     def to_dict(self):
         return {
@@ -67,6 +68,7 @@ class Book:
             "file_path": self.file_path,
             "file_type": self.file_type,
             "chapters": [chapter.to_dict() for chapter in self.chapters],
+            "notes": self.notes,
         }
 
     @classmethod
@@ -79,4 +81,5 @@ class Book:
             file_path=data.get("file_path", ""),
             file_type=data.get("file_type", "txt"),
             chapters=chapters,
+            notes=data.get("notes", ""),
         )
