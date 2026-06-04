@@ -71,6 +71,49 @@ def _extract_clean_text(html_content: bytes) -> str:
 def _clean_title(title: str) -> str:
     return re.sub(r"\s+", " ", title).strip()
 
+def _clean_book_title(title: str) -> str:
+    title = _clean_title(title)
+
+    # Normalize common Gutenberg / old-book subtitle punctuation.
+    replacements = {
+        "; Or,": "; or,",
+        "; OR,": "; or,",
+        ": Or,": ": or,",
+        ": OR,": ": or,",
+        ", Or,": ", or,",
+        ", OR,": ", or,",
+        " / Or ": " / or ",
+        " / OR ": " / or ",
+        "/ Or ": "/ or ",
+        "/ OR ": "/ or ",
+    }
+
+    for old, new in replacements.items():
+        title = title.replace(old, new)
+
+    word_count = len(title.split())
+    too_long = len(title) > 85 or word_count > 14
+
+    if too_long:
+        separators = [
+            " / or ",
+            "/ or ",
+            "; or,",
+            ": or,"
+        ]
+
+        for separator in separators:
+            if separator in title:
+                main_title = title.split(separator, 1)[0].strip()
+                if main_title:
+                    return main_title
+
+        if ";" in title:
+            main_title = title.split(";", 1)[0].strip()
+            if main_title:
+                return main_title
+
+    return title or "Unknown Title"
 
 def _strip_tags(value: str) -> str:
     value = re.sub(r"<[^>]+>", "", value)
@@ -455,7 +498,7 @@ def load_epub_book(file_path: str) -> Book:
 
         actual_heading = next((heading for heading in headings if _is_chapter_like_title(heading)), "")
 
-        # Handle Epilogue files that contain roman sub-sections, such as:
+        # Handle Epilogue files that contain roman subsections, such as:
         # EPILOGUE / I / II. These should become two real readable chapters,
         # with EPILOGUE shown as a divider.
         has_epilogue_divider = any(heading.strip().lower() == "epilogue" for heading in headings)
@@ -526,3 +569,533 @@ def load_epub_book(file_path: str) -> Book:
         file_type="epub",
         chapters=chapters
     )
+from ebooklib import epub, ITEM_DOCUMENT
+from html.parser import HTMLParser
+from pathlib import Path
+import re
+
+from Verba_App.verba.models import Book, Chapter
+
+
+NUMBER_WORDS = (
+    "one|two|three|four|five|six|seven|eight|nine|ten|"
+    "eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|"
+    "eighteen|nineteen|twenty"
+)
+
+ROMAN_OR_NUMBER = rf"(?:[ivxlcdm]+|\d+|{NUMBER_WORDS})"
+
+
+class HTMLTextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+        self.skip_depth = 0
+        self.block_tags = {
+            "p", "div", "section", "article", "br",
+            "h1", "h2", "h3", "h4", "h5", "h6",
+            "li", "blockquote"
+        }
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+
+        if tag in {"head", "script", "style", "nav"}:
+            self.skip_depth += 1
+            return
+
+        if self.skip_depth:
+            return
+
+        if tag in self.block_tags and self.parts and self.parts[-1] != "\n\n":
+            self.parts.append("\n\n")
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+
+        if tag in {"head", "script", "style", "nav"}:
+            self.skip_depth = max(0, self.skip_depth - 1)
+            return
+
+        if self.skip_depth:
+            return
+
+        if tag in self.block_tags and self.parts and self.parts[-1] != "\n\n":
+            self.parts.append("\n\n")
+
+    def handle_data(self, data):
+        if self.skip_depth:
+            return
+
+        text = data.strip()
+        if text:
+            self.parts.append(text)
+
+    def get_text(self):
+        text = "".join(self.parts)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+
+def load_epub_book(file_path: str) -> Book:
+    epub_book = epub.read_epub(file_path)
+
+    title = _get_epub_title(epub_book)
+    author = _get_epub_author(epub_book)
+
+    text_blocks = _extract_spine_text_blocks(epub_book)
+    full_text = _build_clean_full_text(text_blocks)
+
+    chapters = _split_full_text_into_chapters(full_text)
+
+    if not chapters:
+        chapters = _fallback_parse_by_spine(text_blocks)
+
+    if not chapters:
+        chapters.append(
+            Chapter(
+                title="Chapter 1",
+                text="",
+                is_divider=False
+            )
+        )
+
+    book_id = Path(file_path).stem.lower().replace(" ", "_")
+
+    return Book(
+        book_id=book_id,
+        title=title,
+        author=author,
+        file_path=file_path,
+        file_type="epub",
+        chapters=chapters
+    )
+
+
+def _get_epub_title(epub_book) -> str:
+    title_meta = epub_book.get_metadata("DC", "title")
+    if title_meta and title_meta[0][0]:
+        return _clean_book_title(title_meta[0][0])
+
+    return "Unknown Title"
+
+
+def _get_epub_author(epub_book) -> str:
+    author_meta = epub_book.get_metadata("DC", "creator")
+    if author_meta and author_meta[0][0]:
+        return _clean_title(author_meta[0][0])
+
+    return "Unknown"
+
+
+def _extract_spine_text_blocks(epub_book) -> list[tuple[str, str]]:
+    item_map = {
+        item.get_id(): item
+        for item in epub_book.get_items()
+        if item.get_type() == ITEM_DOCUMENT
+    }
+
+    blocks = []
+
+    for spine_id, _ in epub_book.spine:
+        item = item_map.get(spine_id)
+        if not item:
+            continue
+
+        file_name = getattr(item, "file_name", "") or ""
+
+        if _is_probable_navigation_or_cover_file(file_name):
+            continue
+
+        raw_content = item.get_content()
+        text = _extract_clean_text(raw_content)
+
+        if not text:
+            continue
+
+        if _is_gutenberg_license_text(text):
+            continue
+
+        blocks.append((file_name, text))
+
+    return blocks
+
+
+def _extract_clean_text(html_content: bytes) -> str:
+    parser = HTMLTextExtractor()
+    parser.feed(html_content.decode("utf-8", errors="ignore"))
+    return _clean_body_text(parser.get_text())
+
+
+def _build_clean_full_text(text_blocks: list[tuple[str, str]]) -> str:
+    full_text = "\n\n".join(text for _, text in text_blocks)
+    full_text = _strip_gutenberg_header_and_footer(full_text)
+    full_text = _strip_front_matter_before_first_real_chapter(full_text)
+    full_text = _clean_body_text(full_text)
+    return full_text
+
+
+def _split_full_text_into_chapters(full_text: str) -> list[Chapter]:
+    chapter_matches = _find_real_chapter_matches(full_text)
+
+    if not chapter_matches:
+        return []
+
+    chapters = []
+
+    for index, match in enumerate(chapter_matches):
+        start = match.start()
+        end = chapter_matches[index + 1].start() if index + 1 < len(chapter_matches) else len(full_text)
+
+        section_text = full_text[start:end].strip()
+        if not section_text:
+            continue
+
+        title, body = _extract_chapter_title_and_body(section_text)
+
+        if not title:
+            title = f"Chapter {len(chapters) + 1}"
+
+        if not body:
+            continue
+
+        if _is_bad_chapter(title, body):
+            continue
+
+        chapters.append(
+            Chapter(
+                title=title,
+                text=body,
+                is_divider=False
+            )
+        )
+
+    return chapters
+
+
+def _fallback_parse_by_spine(text_blocks: list[tuple[str, str]]) -> list[Chapter]:
+    chapters = []
+
+    for _, text in text_blocks:
+        cleaned = _strip_gutenberg_header_and_footer(text)
+        cleaned = _clean_body_text(cleaned)
+
+        if not cleaned:
+            continue
+
+        lines = _nonempty_lines(cleaned)
+        if not lines:
+            continue
+
+        first_line = lines[0]
+
+        if _is_bad_title(first_line):
+            continue
+
+        if _word_count(cleaned) < 80:
+            continue
+
+        title = first_line if len(first_line) <= 80 else f"Chapter {len(chapters) + 1}"
+        body = "\n\n".join(lines[1:]).strip() if title == first_line else cleaned
+
+        if not body:
+            body = cleaned
+
+        chapters.append(
+            Chapter(
+                title=title,
+                text=body,
+                is_divider=False
+            )
+        )
+
+    return chapters
+
+
+def _find_real_chapter_matches(text: str) -> list[re.Match]:
+    matches = list(
+        re.finditer(
+            rf"(?im)^\s*(chapter\s+{ROMAN_OR_NUMBER}(?:[\.:]?\s*)?)$",
+            text
+        )
+    )
+
+    if not matches:
+        return []
+
+    real_matches = []
+
+    for index, match in enumerate(matches):
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        section_length = next_start - match.end()
+
+        if section_length >= 900:
+            real_matches.append(match)
+
+    if real_matches:
+        return real_matches
+
+    return matches
+
+
+def _extract_chapter_title_and_body(section_text: str) -> tuple[str, str]:
+    lines = _nonempty_lines(section_text)
+
+    if not lines:
+        return "", ""
+
+    chapter_heading = _clean_title(lines[0])
+    subtitle = ""
+    body_start_index = 1
+
+    if len(lines) > 1:
+        possible_subtitle = _clean_title(lines[1])
+
+        if _looks_like_subtitle(possible_subtitle):
+            subtitle = possible_subtitle
+            body_start_index = 2
+
+    if subtitle:
+        title = f"{chapter_heading} — {subtitle}"
+    else:
+        title = chapter_heading
+
+    body = "\n\n".join(lines[body_start_index:]).strip()
+
+    return title, body
+
+
+def _strip_gutenberg_header_and_footer(text: str) -> str:
+    cleaned = text
+
+    start_patterns = [
+        r"\*\*\*\s*START OF (?:THE )?PROJECT GUTENBERG EBOOK.*?\*\*\*",
+        r"\*\*\*\s*START OF THIS PROJECT GUTENBERG EBOOK.*?\*\*\*",
+    ]
+
+    for pattern in start_patterns:
+        match = re.search(pattern, cleaned, re.IGNORECASE | re.DOTALL)
+        if match:
+            cleaned = cleaned[match.end():]
+            break
+
+    end_patterns = [
+        r"\*\*\*\s*END OF (?:THE )?PROJECT GUTENBERG EBOOK.*",
+        r"\*\*\*\s*END OF THIS PROJECT GUTENBERG EBOOK.*",
+        r"End of (?:the )?Project Gutenberg.*",
+        r"THE FULL PROJECT GUTENBERG LICENSE.*",
+    ]
+
+    for pattern in end_patterns:
+        match = re.search(pattern, cleaned, re.IGNORECASE | re.DOTALL)
+        if match:
+            cleaned = cleaned[:match.start()]
+            break
+
+    cleaned = re.sub(
+        r"(?is)^.*?this ebook is for the use of anyone anywhere.*?project gutenberg license.*?\n",
+        "",
+        cleaned
+    )
+
+    return cleaned.strip()
+
+
+def _strip_front_matter_before_first_real_chapter(text: str) -> str:
+    matches = _find_real_chapter_matches(text)
+
+    if not matches:
+        return text
+
+    return text[matches[0].start():].strip()
+
+
+def _is_probable_navigation_or_cover_file(file_name: str) -> bool:
+    lowered = file_name.lower()
+
+    markers = [
+        "toc",
+        "nav",
+        "navigation",
+        "cover",
+        "titlepage",
+        "wrap",
+    ]
+
+    return any(marker in lowered for marker in markers)
+
+
+def _is_gutenberg_license_text(text: str) -> bool:
+    sample = text[:2000].lower()
+
+    return (
+        "the full project gutenberg license" in sample
+        or "project gutenberg literary archive foundation" in sample
+        or "end of the project gutenberg ebook" in sample
+    )
+
+
+def _is_bad_chapter(title: str, body: str) -> bool:
+    combined = f"{title}\n{body}".lower()
+
+    bad_markers = [
+        "project gutenberg",
+        "gutenberg ebook",
+        "this ebook is for the use of anyone anywhere",
+        "almost no restrictions whatsoever",
+        "terms of the project gutenberg license",
+        "gutenberg literary archive foundation",
+        "www.gutenberg.org",
+        "produced by",
+        "distributed proofreaders",
+    ]
+
+    if any(marker in combined for marker in bad_markers):
+        return True
+
+    if _is_bad_title(title):
+        return True
+
+    if _word_count(body) < 80:
+        return True
+
+    return False
+
+
+def _is_bad_title(title: str) -> bool:
+    t = _clean_title(title).lower()
+
+    bad_titles = {
+        "contents",
+        "table of contents",
+        "illustrations",
+        "acknowledgments",
+        "acknowledgements",
+        "preface",
+        "preface to third edition",
+        "principal authorities referred to",
+        "authorities referred to",
+        "appendix",
+        "index",
+        "license",
+        "the full project gutenberg license",
+        "the full project gutenberg™ license",
+    }
+
+    if t in bad_titles:
+        return True
+
+    if "project gutenberg" in t:
+        return True
+
+    if re.match(rf"^part\s+{ROMAN_OR_NUMBER}$", t):
+        return True
+
+    if re.match(rf"^book\s+{ROMAN_OR_NUMBER}$", t):
+        return True
+
+    if re.match(rf"^volume\s+{ROMAN_OR_NUMBER}$", t):
+        return True
+
+    return False
+
+
+def _looks_like_subtitle(value: str) -> bool:
+    if not value:
+        return False
+
+    if len(value) > 90:
+        return False
+
+    if _is_chapter_heading(value):
+        return False
+
+    if _is_bad_title(value):
+        return False
+
+    words = value.split()
+
+    if len(words) > 12:
+        return False
+
+    return True
+
+
+def _is_chapter_heading(value: str) -> bool:
+    return bool(
+        re.match(
+            rf"(?i)^\s*chapter\s+{ROMAN_OR_NUMBER}(?:[\.:]?\s*)?$",
+            value.strip()
+        )
+    )
+
+
+def _nonempty_lines(text: str) -> list[str]:
+    paragraphs = re.split(r"\n\s*\n+", text)
+
+    cleaned_paragraphs = []
+
+    for paragraph in paragraphs:
+        paragraph = _clean_paragraph(paragraph)
+
+        if paragraph:
+            cleaned_paragraphs.append(paragraph)
+
+    return cleaned_paragraphs
+
+
+def _clean_title(title: str) -> str:
+    title = title.replace("\u00a0", " ")
+    title = re.sub(r"\s+", " ", title)
+    return title.strip()
+
+
+def _clean_body_text(text: str) -> str:
+    text = text.replace("\u00a0", " ")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    text = text.replace("—", " — ")
+    text = text.replace("–", " – ")
+    text = text.replace("―", " ― ")
+
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    paragraphs = re.split(r"\n\s*\n+", text)
+
+    cleaned_paragraphs = []
+    for paragraph in paragraphs:
+        cleaned = _clean_paragraph(paragraph)
+        if cleaned:
+            cleaned_paragraphs.append(cleaned)
+
+    return "\n\n".join(cleaned_paragraphs).strip()
+
+
+def _clean_paragraph(paragraph: str) -> str:
+    paragraph = paragraph.replace("\u00a0", " ")
+
+    lines = [
+        line.strip()
+        for line in paragraph.splitlines()
+        if line.strip()
+    ]
+
+    if not lines:
+        return ""
+
+    joined = " ".join(lines)
+    joined = re.sub(r"\s+", " ", joined)
+
+    return joined.strip()
+
+def _word_count(text: str) -> int:
+    text = text.replace("—", " ")
+    text = text.replace("–", " ")
+    text = text.replace("―", " ")
+
+    return len(re.findall(r"\b[\w'-]+\b", text))

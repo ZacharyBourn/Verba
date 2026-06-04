@@ -54,6 +54,17 @@ THEMES = {
         "library_card": "#202020",
         "intro_accent": "#a6a6a6",
     },
+    "Fall": {
+        "bg_color": "#6b2f2f",
+        "panel_color": "#4a1a1a",
+        "text_box_bg": "#dc8460",
+        "text_color": "#f2f2f2",
+        "subtle_text": "#c2c2c2",
+        "border_color": "#4a4a4a",
+        "sidebar_select": "#555555",
+        "library_card": "#dc8460",
+        "intro_accent": "#6b2f2f",
+    },
 }
 
 THEME_NAMES = list(THEMES.keys())
