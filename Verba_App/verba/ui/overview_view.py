@@ -140,10 +140,16 @@ class OverviewView:
             background=getattr(self.app, "panel_color", self.app.bg_color)
         )
 
+        self.text.tag_configure(
+            "selected_overview_word",
+            background="#fff176",
+            foreground="black"
+        )
+
         self.text.insert("1.0", self.current_chapter_text)
         self.text.bind("<Key>", lambda event: "break")
         self.text.bind("<Double-Button-1>", self.jump_to_cursor)
-        self.text.bind("<ButtonRelease-1>", self._move_insert_to_click)
+        self.text.bind("<ButtonRelease-1>", self._highlight_clicked_or_selected_word)
 
         self._highlight_and_scroll_to_reader_position()
 
@@ -248,6 +254,49 @@ class OverviewView:
             self.text.mark_set("insert", self.text.index(f"@{event.x},{event.y}"))
         except Exception:
             pass
+
+    def _highlight_clicked_or_selected_word(self, event=None):
+        """Move the cursor and highlight the selected/clicked word in yellow.
+
+        When the user manually clicks/selects a word, clear the old Reader → Overview
+        landing highlight so only the newly selected word remains highlighted.
+        """
+        if not self.text:
+            return "break"
+
+        if event is not None:
+            self._move_insert_to_click(event)
+
+        try:
+            if self.text.tag_ranges(tk.SEL):
+                start = self.text.index(tk.SEL_FIRST)
+                end = self.text.index(tk.SEL_LAST)
+            else:
+                cursor = self.text.index("insert")
+                start = self.text.index(f"{cursor} wordstart")
+                end = self.text.index(f"{cursor} wordend")
+
+            selected = self.text.get(start, end).strip()
+            selected = selected.strip("\"'“”‘’()[]{}.,;:!?—–-")
+
+            if not selected:
+                return "break"
+
+            # Clear the Reader → Overview landing highlight
+            self.text.tag_remove("current_position", "1.0", tk.END)
+            self.text.tag_remove("current_line", "1.0", tk.END)
+
+            # Clear any previous manually selected Overview word
+            self.text.tag_remove("selected_overview_word", "1.0", tk.END)
+
+            # Highlight the newly clicked/selected word
+            self.text.tag_add("selected_overview_word", start, end)
+            self.text.mark_set("insert", start)
+
+        except Exception as error:
+            print(f"Overview selection error: {error}")
+
+        return "break"
 
     def _highlight_and_scroll_to_reader_position(self):
         if not self.text or not self.app.reader.has_text():

@@ -1,4 +1,3 @@
-
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from pathlib import Path
@@ -19,7 +18,6 @@ from Verba_App.verba.ui.bookmarks_panel import BookmarksPanel
 from Verba_App.verba.ui.overview_view import OverviewView
 from Verba_App.verba.ui.notes_view import NotesView
 from Verba_App.verba.ui.themes import get_theme, THEME_NAMES
-
 
 class MainWindow:
     def __init__(self, root):
@@ -619,7 +617,7 @@ class MainWindow:
         )
         self.display_text.pack(expand=True, fill="both")
 
-        self.display_text.tag_configure("selected_word", background="#444444", foreground="#ffffff")
+        self.display_text.tag_configure("selected_word", background="#fff176", foreground="#000000")
         self.display_text.tag_configure("center", justify="center")
 
         self.display_text.bind("<ButtonRelease-1>", self.on_text_selection)
@@ -779,6 +777,8 @@ class MainWindow:
         self.notes_view_frame.pack_forget()
 
     def show_library_view(self):
+        self.autosave_reader_notes_if_visible()
+
         if self.focus_mode:
             self.toggle_focus_mode()
 
@@ -791,6 +791,8 @@ class MainWindow:
         self.refresh_library_view()
 
     def show_reader_view(self):
+        self.autosave_reader_notes_if_visible()
+
         self.hide_content_views()
         self.reader_view.pack(fill="both", expand=True)
         self.root.after(50, self.focus_reader_view)
@@ -802,6 +804,8 @@ class MainWindow:
             self.root.focus_set()
 
     def show_stats_view(self):
+        self.autosave_reader_notes_if_visible()
+
         if self.focus_mode:
             self.toggle_focus_mode()
 
@@ -814,6 +818,8 @@ class MainWindow:
         self.stats_view_frame.pack(fill="both", expand=True)
 
     def show_vocab_view(self):
+        self.autosave_reader_notes_if_visible()
+
         if self.focus_mode:
             self.toggle_focus_mode()
 
@@ -826,6 +832,8 @@ class MainWindow:
         self.vocab_view_frame.pack(fill="both", expand=True)
 
     def show_overview_view(self):
+        self.autosave_reader_notes_if_visible()
+
         if self.focus_mode:
             self.toggle_focus_mode()
 
@@ -838,6 +846,8 @@ class MainWindow:
         self.overview_view_frame.pack(fill="both", expand=True)
 
     def show_notes_view(self, return_to="library"):
+        self.autosave_reader_notes_if_visible()
+
         self.notes_return_view = return_to
 
         if self.focus_mode:
@@ -1102,23 +1112,63 @@ class MainWindow:
         self.reader_notes_text.focus_set()
 
     def hide_reader_notes(self):
+        self.autosave_reader_notes_if_visible()
+
         self.reader_notes_frame.pack_forget()
         self.reader_notes_visible = False
         self.notes_return_view = "library"
         self.root.after(50, self.focus_reader_view)
 
-    def save_reader_notes(self):
+    def _save_reader_notes_text(self, show_status: bool = False) -> bool:
+        """Save the inline Reader notes box to the open book and stored library copy."""
         if not self.current_book:
-            messagebox.showinfo("No Book", "Open a book first.")
-            return
+            if show_status:
+                messagebox.showinfo("No Book", "Open a book first.")
+            return False
 
-        self.current_book.notes = self.reader_notes_text.get("1.0", tk.END).strip()
+        if not hasattr(self, "reader_notes_text"):
+            if show_status:
+                messagebox.showinfo("No Notes Box", "Open the Reader notes box first.")
+            return False
 
-        # Save through the library manager when this book belongs to the saved library.
+        try:
+            notes_text = self.reader_notes_text.get("1.0", tk.END).strip()
+        except Exception as error:
+            if show_status:
+                messagebox.showerror("Notes Error", f"Could not read notes:\n{error}")
+            return False
+
+        # Update the currently open in-memory book.
+        self.current_book.notes = notes_text
+
+        # Update the stored library book and persist it.
         stored_book = self.library_manager.get_book(self.current_book.book_id)
         if stored_book:
-            stored_book.notes = self.current_book.notes
+            stored_book.notes = notes_text
             self.library_manager.save()
+        else:
+            # Pasted/temporary books may not exist in the saved library.
+            print(f"Could not find stored library book for notes: {self.current_book.book_id}")
+
+        return True
+
+    def autosave_reader_notes_if_visible(self):
+        """Autosave the inline Reader notes box before hiding or switching views."""
+        if not getattr(self, "reader_notes_visible", False):
+            return
+
+        self._save_reader_notes_text(show_status=False)
+
+    def save_reader_notes(self):
+        saved = self._save_reader_notes_text(show_status=True)
+
+        if not saved:
+            return
+
+        try:
+            self.refresh_library_view()
+        except Exception:
+            pass
 
         self.reader_notes_status.config(text="Notes saved.")
         self.root.after(2500, lambda: self.reader_notes_status.config(text=""))
@@ -1151,10 +1201,13 @@ class MainWindow:
         self.display_text.config(state="disabled")
 
     def on_text_selection(self, event=None):
+        if event is None:
+            return "break"
+
         try:
             index = self.display_text.index(f"@{event.x},{event.y}")
         except Exception:
-            return
+            return "break"
 
         self.display_text.config(state="normal")
         self.display_text.tag_remove("selected_word", "1.0", tk.END)
@@ -1163,7 +1216,7 @@ class MainWindow:
         end = self.display_text.index(f"{index} wordend")
 
         word = self.display_text.get(start, end).strip()
-        cleaned = word.strip("\"'“”‘’()[]{}.,;:!?")
+        cleaned = word.strip("\"'“”‘’()[]{}.,;!?—–-")
 
         if cleaned:
             self.selected_word = cleaned
@@ -1172,6 +1225,7 @@ class MainWindow:
             self.selected_word = ""
 
         self.display_text.config(state="disabled")
+        return "break"
 
     def add_selected_word_to_vocab(self):
         if not self.selected_word:
