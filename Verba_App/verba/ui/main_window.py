@@ -42,7 +42,7 @@ class MainWindow:
         self.settings = self.settings_manager.settings
         self.session = self.session_manager.session
 
-        self.root.title("Verba v0.1.2")
+        self.root.title("Verba v0.1.3")
         self.root.geometry(f"{self.settings.window_width}x{self.settings.window_height}")
         self.root.state("zoomed")
         #self.root.minsize(1100, 760)
